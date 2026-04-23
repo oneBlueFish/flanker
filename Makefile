@@ -7,6 +7,7 @@ LOG     := /tmp/flankers.log
 .DEFAULT_GOAL := restart
 
 run:
+	DISPLAY=:0 $(GODOT) --headless --import --path $(PROJECT) > /dev/null 2>&1
 	DISPLAY=:0 $(GODOT) --path $(PROJECT) > $(LOG) 2>&1 &
 	sleep 8 && cat $(LOG)
 
