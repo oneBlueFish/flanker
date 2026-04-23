@@ -12,6 +12,8 @@ const JUMP_VELOCITY     := 6.0
 const MOUSE_SENSITIVITY := 0.003
 const GRAVITY           := 20.0
 
+var player_team: int = 0
+
 const FOV_NORMAL  := 75.0
 const FOV_ZOOM    := 30.0
 const FOV_LERP    := 12.0
@@ -388,7 +390,7 @@ func _shoot() -> void:
 	var bullet: Node3D = BulletScene.instantiate()
 	bullet.damage        = w.damage
 	bullet.source        = "player"
-	bullet.shooter_team  = -1
+	bullet.shooter_team  = player_team
 	var dir: Vector3     = -camera.global_transform.basis.z
 	bullet.velocity      = dir * w.bullet_speed
 	get_tree().root.get_child(0).add_child(bullet)

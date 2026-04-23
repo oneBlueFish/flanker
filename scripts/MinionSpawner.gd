@@ -31,7 +31,7 @@ func _launch_wave() -> void:
 	if main and main.has_method("show_wave_announcement"):
 		main.show_wave_announcement(wave_number)
 
-	var count: int = min(wave_number, MAX_WAVE_SIZE)
+	var count: int = min(wave_number, 5)
 	for lane_i in range(3):
 		for i in range(count):
 			var delay := i * MINION_STAGGER

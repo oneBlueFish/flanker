@@ -58,6 +58,9 @@ func _try_place_tower(screen_pos: Vector2) -> void:
 		return
 	var t := -from.y / dir.y
 	var world_pos := from + dir * t
-	var success: bool = build_system.place_tower(world_pos)
+	# Get player team from Main
+	var main = get_tree().root.get_node("Main")
+	var player_team: int = main.fps_player.player_team if main and main.has_node("FPSPlayer") else 0
+	var success: bool = build_system.place_tower(world_pos, player_team)
 	if not success:
 		print("Not enough points to place tower!")

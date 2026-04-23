@@ -22,6 +22,9 @@ var _red_base_px: Vector2
 
 @onready var _fps_player: CharacterBody3D = get_node("/root/Main/FPSPlayer")
 
+const COL_BLUE_TOWER := Color(0.1, 0.6, 1.0, 1.0)
+const COL_RED_TOWER  := Color(1.0, 0.4, 0.1, 1.0)
+
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(MINIMAP_SIZE, MINIMAP_SIZE)
@@ -77,6 +80,25 @@ func _draw() -> void:
 		var px: Vector2 = _world_to_map(Vector2(pp.x, pp.z))
 		if _in_bounds(px):
 			draw_circle(px, 4.0, COL_PLAYER)
+
+	# Tower dots
+	var main = get_tree().root.get_node("Main")
+	if main and main.has_node("FPSPlayer"):
+		var towers = get_tree().root.get_node("Main").get_children()
+		for node in towers:
+			if not is_instance_valid(node):
+				continue
+			var tower = node as Node3D
+			if not tower:
+				continue
+			var tower_name = tower.get("name") as String
+			if tower_name and "Tower" in tower_name:
+				var tower_team: int = tower.get("team") if tower.has_method("get") and tower.get("team") != null else 0
+				var tp: Vector3 = tower.global_position
+				var px: Vector2 = _world_to_map(Vector2(tp.x, tp.z))
+				if _in_bounds(px):
+					var tower_col: Color = COL_BLUE_TOWER if tower_team == 0 else COL_RED_TOWER
+					draw_circle(px, 2.5, tower_col)
 
 	# Border
 	draw_rect(r, COL_BORDER, false, 1.5)

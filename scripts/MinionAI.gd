@@ -188,20 +188,40 @@ func _apply_separation() -> void:
 		velocity.z += push.z * SEPARATION_FORCE
 
 func _march(_delta: float) -> void:
-	if current_waypoint >= waypoints.size():
+	if current_waypoint < waypoints.size():
+		# Follow waypoints
+		var dest := waypoints[current_waypoint]
+		dest.y = global_position.y
+		var dir: Vector3 = dest - global_position
+		if dir.length() < 0.5:
+			current_waypoint += 1
+			return
+		var horiz: Vector3 = dir.normalized()
+		velocity.x = horiz.x * speed
+		velocity.z = horiz.z * speed
+		_face(dest)
+	elif _target == null:
+		# Waypoints exhausted, continue to enemy base
+		var target_team: int = 1 if team == 0 else 0
+		var base: Node3D = get_tree().get_first_node_in_group("bases") as Node3D
+		if base and base.team == target_team:
+			var to_base: Vector3 = base.global_position - global_position
+			to_base.y = 0.0
+			if to_base.length() > 2.0:
+				var dir: Vector3 = to_base.normalized()
+				velocity.x = dir.x * speed
+				velocity.z = dir.z * speed
+				_face(to_base)
+			else:
+				velocity.x = 0.0
+				velocity.z = 0.0
+		else:
+			velocity.x = 0.0
+			velocity.z = 0.0
+	else:
+		# We have a target, don't move (already handled in main logic)
 		velocity.x = 0.0
 		velocity.z = 0.0
-		return
-	var dest := waypoints[current_waypoint]
-	dest.y = global_position.y
-	var dir := dest - global_position
-	if dir.length() < 0.5:
-		current_waypoint += 1
-		return
-	var horiz := dir.normalized()
-	velocity.x = horiz.x * speed
-	velocity.z = horiz.z * speed
-	_face(dest)
 
 func _face(target: Vector3) -> void:
 	var dir := target - global_position

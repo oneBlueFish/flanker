@@ -114,6 +114,18 @@ func _place_tree(pos: Vector3, tree_scenes: Array[PackedScene]) -> void:
 	
 	var scale: float = randf_range(TREE_SCALE_MIN, TREE_SCALE_MAX)
 	tree.scale = Vector3(scale, scale, scale)
+	
+	_add_tree_collision(tree, scale)
+
+func _add_tree_collision(tree: Node, scale: float) -> void:
+	var col_shape: BoxShape3D = BoxShape3D.new()
+	var y_scale: float = scale / 3.0
+	col_shape.size = Vector3(1.5, 2.0 * y_scale, 1.5)
+
+	var col_node: CollisionShape3D = CollisionShape3D.new()
+	col_node.shape = col_shape
+
+	tree.add_child(col_node)
 
 func _get_terrain_height(pos: Vector3) -> float:
 	if terrain_body == null:

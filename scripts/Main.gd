@@ -1,7 +1,8 @@
 extends Node
 
 const RESPAWN_DELAY := 5.0
-const BLUE_SPAWN    := Vector3(0.0, 10.0, 70.0)
+const BLUE_SPAWN    := Vector3(0.0, 10.0, 84.0)
+const RED_SPAWN     := Vector3(0.0, 10.0, -84.0)
 
 # Weapon pickup spawns: 3 lane midpoints + 6 mountain positions
 const MOUNTAIN_PICKUP_POSITIONS: Array = [
@@ -24,9 +25,15 @@ var game_over    := false
 var fps_mode     := true
 var _respawning  := false
 var _respawn_timer: float = 0.0
+var player_start_team: int = 0
 
 @onready var fps_player:         CharacterBody3D = $FPSPlayer
 @onready var rts_camera:         Camera3D        = $RTSCamera
+
+func _enter_tree() -> void:
+	# Randomize player team on enter tree (before _ready)
+	player_start_team = randi() % 2
+	fps_player.player_team = player_start_team
 @onready var mode_label:         Label           = $HUD/ModeLabel
 @onready var game_over_label:    Label           = $HUD/GameOverLabel
 @onready var wave_info_label:    Label           = $HUD/WaveInfoLabel
@@ -65,11 +72,14 @@ func _ready() -> void:
 	fps_player.stamina_bar  = $HUD/StaminaBar
 	fps_player.points_label = points_label
 	fps_player.connect("died", _on_player_died)
+	# Set player spawn position based on team (z=+84 blue, z=-84 red)
+	var spawn_z: float = 84.0 if fps_player.player_team == 0 else -84.0
+	fps_player.global_position = Vector3(0.0, 10.0, spawn_z)
 	# Spawn weapon pickups after terrain has settled (deferred so LaneData is ready)
 	call_deferred("_spawn_weapon_pickups")
 	# Pass secret paths to LaneData after terrain generates
 	call_deferred("_setup_lane_data")
-	# Spawn preset towers near lane starts (blue team)
+	# Spawn preset towers near lane starts (both teams)
 	call_deferred("_spawn_preset_towers")
 
 func _setup_lane_data() -> void:
@@ -86,34 +96,43 @@ func _process(delta: float) -> void:
 		else:
 			respawn_label.text = "Respawning in %d..." % (int(_respawn_timer) + 1)
 	# Always show team points (both modes)
-	var blue_pts: int = TeamData.get_points(0)
-	var red_pts: int = TeamData.get_points(1)
-	points_label.text = "BLUE: %d | RED: %d" % [blue_pts, red_pts]
+	var player_team_name: String = "BLUE" if fps_player.player_team == 0 else "RED"
+	var player_pts: int = TeamData.get_points(fps_player.player_team)
+	var enemy_pts: int = TeamData.get_points(1 - fps_player.player_team)
+	points_label.text = "%s: %d" % [player_team_name, player_pts]
 
 func _spawn_preset_towers() -> void:
 	const TOWER_SCENE := preload("res://scenes/Tower.tscn")
-	# Lane positions: get near blue base (z=70-75)
-	var lane_positions: Array = [
+	# Blue lane positions near blue base (z=70-75)
+	var blue_lane_positions: Array = [
 		Vector3(-28.0, 0.0, 70.0),   # Left lane (closer to path)
 		Vector3(-3.0, 0.0, 70.0),   # Mid lane (on edge of path)
 		Vector3(28.0, 0.0, 70.0),    # Right lane (closer to path)
 	]
-	var towers: Node3D = $World/Towers if has_node("World/Towers") else null
-	if not towers:
-		towers = Node3D.new()
-		towers.name = "Towers"
-		add_child(towers)
-	for pos in lane_positions:
+	# Red lane positions near red base (z=-70-75)
+	var red_lane_positions: Array = [
+		Vector3(28.0, 0.0, -70.0),   # Left lane (closer to path)
+		Vector3(3.0, 0.0, -70.0),    # Mid lane (on edge of path)
+		Vector3(-28.0, 0.0, -70.0),  # Right lane (closer to path)
+	]
+
+	for pos in blue_lane_positions:
 		var tower = TOWER_SCENE.instantiate()
-		# Get terrain height via raycast
 		var terrain_y: float = _get_terrain_height(pos)
 		pos.y = 0
-		# Add to world first (required for _ready to work)
 		$World.add_child(tower)
 		tower.global_position = pos
-		# Then setup (after adding to tree)
 		tower.setup(0)  # Blue team
-		print("Preset tower spawned at ", pos)
+		print("Preset blue tower spawned at ", pos)
+
+	for pos in red_lane_positions:
+		var tower = TOWER_SCENE.instantiate()
+		var terrain_y: float = _get_terrain_height(pos)
+		pos.y = 0
+		$World.add_child(tower)
+		tower.global_position = pos
+		tower.setup(1)  # Red team
+		print("Preset red tower spawned at ", pos)
 
 func _get_terrain_height(pos: Vector3) -> float:
 	var world_3d: World3D = get_tree().root.get_world_3d()
@@ -204,7 +223,8 @@ func _on_player_died() -> void:
 func _do_respawn() -> void:
 	_respawning = false
 	respawn_label.visible = false
-	fps_player.respawn(BLUE_SPAWN)
+	var spawn_pos: Vector3 = BLUE_SPAWN if fps_player.player_team == 0 else RED_SPAWN
+	fps_player.respawn(spawn_pos)
 	audio_respawn.play()
 	_set_mode(true)
 
