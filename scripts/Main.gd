@@ -84,8 +84,18 @@ func _setup_multiplayer_game() -> void:
 	_pause_menu = PauseMenuScene.instantiate()
 	add_child(_pause_menu)
 	_spawn_local_player()
+	_spawn_remote_player_manager()
 	_start_multiplayer_game()
 	_randomize_time_of_day()
+
+func _spawn_remote_player_manager() -> void:
+	if not multiplayer.has_multiplayer_peer():
+		return
+	var mgr_script := load("res://scripts/RemotePlayerManager.gd")
+	var mgr: Node = Node.new()
+	mgr.set_script(mgr_script)
+	mgr.name = "RemotePlayerManager"
+	add_child(mgr)
 
 func _spawn_local_player() -> void:
 	var my_id := multiplayer.get_unique_id()

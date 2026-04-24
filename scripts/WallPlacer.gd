@@ -29,6 +29,10 @@ var _wall_scenes: Array[PackedScene] = []
 @onready var terrain_body: StaticBody3D = null
 
 func _ready() -> void:
+	var gen_seed: int = GameSync.game_seed
+	if gen_seed == 0:
+		gen_seed = randi()
+	seed(gen_seed)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	terrain_body = _find_terrain()

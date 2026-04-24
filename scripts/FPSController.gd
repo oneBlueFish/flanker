@@ -30,6 +30,7 @@ var player_damage_mult: float = 1.0
 
 var _peer_id: int = 1
 var _is_local: bool = true
+var _sync_frame: int = 0
 
 const FOV_NORMAL  := 75.0
 const FOV_ZOOM    := 30.0
@@ -112,6 +113,7 @@ var camera_shake_time := 0.0
 var _base_cam_y := 0.0
 
 const BulletScene := preload("res://scenes/Bullet.tscn")
+const PLAYER_SYNC_INTERVAL := 5
 
 func _ready() -> void:
 	add_to_group("players")
@@ -126,6 +128,13 @@ func _ready() -> void:
 		if info.has("role"):
 			player_role = info.role
 			_apply_role_stats()
+	
+	# Register with GameSync so host can track us
+	if _is_local:
+		GameSync.set_player_team(_peer_id, player_team)
+		GameSync.set_player_health(_peer_id, hp)
+		GameSync.player_died.connect(_on_game_sync_died)
+		GameSync.player_respawned.connect(_on_game_sync_respawned)
 	
 	_load_default_weapon()
 	_refresh_viewmodel()
@@ -431,6 +440,14 @@ func _physics_process(delta: float) -> void:
 	velocity.z = dir.z * cur_speed
 	move_and_slide()
 
+	# Broadcast transform to host every N frames (local player only)
+	if multiplayer.has_multiplayer_peer() and _is_local:
+		_sync_frame += 1
+		if _sync_frame >= PLAYER_SYNC_INTERVAL:
+			_sync_frame = 0
+			var cam_rot: Vector3 = camera.global_rotation
+			LobbyManager.report_player_transform.rpc_id(1, global_position, cam_rot, player_team)
+
 func _set_crouch(crouch: bool) -> void:
 	_crouching = crouch
 	if crouch:
@@ -474,6 +491,13 @@ func _shoot() -> void:
 	bullet.velocity      = dir * w.bullet_speed
 	get_tree().root.get_child(0).add_child(bullet)
 	bullet.global_position = shoot_from.global_position
+
+	# Send to host for authoritative validation + broadcast to other clients
+	if multiplayer.has_multiplayer_peer():
+		if multiplayer.is_server():
+			LobbyManager.spawn_bullet_visuals.rpc(shoot_from.global_position, dir, w.damage, player_team)
+		else:
+			LobbyManager.validate_shot.rpc_id(1, shoot_from.global_position, dir, w.damage * player_damage_mult, player_team, _peer_id)
 
 	_update_ammo_hud()
 	_play_kick_animation()
@@ -574,3 +598,16 @@ func _update_points_label() -> void:
 	var blue_pts: int = TeamData.get_points(0)
 	var red_pts: int = TeamData.get_points(1)
 	points_label.text = "BLUE: %d | RED: %d" % [blue_pts, red_pts]
+
+func _on_game_sync_died(peer_id: int) -> void:
+	if peer_id != _peer_id:
+		return
+	# Local player death already handled by take_damage → _on_death.
+	# This fires when host authoritatively kills us (network damage path).
+	if not _dead:
+		_on_death()
+
+func _on_game_sync_respawned(peer_id: int, spawn_pos: Vector3) -> void:
+	if peer_id != _peer_id:
+		return
+	respawn(spawn_pos)

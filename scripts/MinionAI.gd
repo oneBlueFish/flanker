@@ -280,6 +280,9 @@ func _fire_at(target: Node3D) -> void:
 	bullet.global_position = spawn_pos
 	get_tree().root.get_child(0).add_child(bullet)
 
+	if multiplayer.is_server():
+		LobbyManager.spawn_bullet_visuals.rpc(bullet.global_position, dir, attack_damage, team)
+
 	shoot_audio.play()
 
 func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
@@ -319,3 +322,10 @@ func _die() -> void:
 	tween.tween_interval(0.3)
 	tween.tween_property(self, "scale", Vector3.ZERO, 0.25)
 	tween.tween_callback(queue_free)
+
+	if multiplayer.is_server():
+		var path: NodePath = get_path()
+		LobbyManager.kill_minion_visuals.rpc(path)
+
+func force_die() -> void:
+	_die()

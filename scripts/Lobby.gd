@@ -336,12 +336,10 @@ func _on_ready_pressed() -> void:
 func _on_start_pressed() -> void:
 	if not _is_host:
 		return
-	LobbyManager.request_start_game()
+	LobbyManager.start_game("res://scenes/Main.tscn")
 
 func _on_game_start_requested() -> void:
 	queue_free()
-	if _is_host:
-		LobbyManager.start_game("res://scenes/Main.tscn")
 
 func _on_leave_pressed() -> void:
 	NetworkManager.close_connection()
