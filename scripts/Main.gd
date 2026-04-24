@@ -260,6 +260,7 @@ func toggle_pause(paused: bool) -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 		fps_player.set_active(false)
 		rts_camera.current = false
+		crosshair.visible = false
 	else:
 		game_state = GameState.PLAYING
 		_pause_menu.visible = false
@@ -267,6 +268,7 @@ func toggle_pause(paused: bool) -> void:
 		fps_player.set_active(true)
 		rts_camera.current = false
 		fps_mode = true
+		crosshair.visible = true
 		mode_label.text = "Mode: FPS  [Tab] to switch"
 
 func _HUD_set_visible(visible: bool) -> void:

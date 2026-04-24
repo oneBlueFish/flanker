@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://start_menu"]
+[gd_scene load_steps=10 format=3 uid="uid://start_menu"]
 
 [ext_resource type="Script" path="res://scripts/MenuCamera.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/StartMenu.gd" id="2"]
@@ -35,6 +35,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 script = ExtResource("2")
 
 [node name="MenuCamera" type="Camera3D" parent="."]
@@ -75,11 +76,15 @@ layout_mode = 2
 [node name="StartButton" type="Button" parent="VBox"]
 layout_mode = 2
 custom_minimum_size = Vector2(200, 60)
+theme_normal_stylebox = SubResource("StyleBoxFlat_normal")
+theme_hover_stylebox = SubResource("StyleBoxFlat_hover")
 text = "Start War"
 
 [node name="QuitButton" type="Button" parent="VBox"]
 layout_mode = 2
 custom_minimum_size = Vector2(200, 50)
+theme_normal_stylebox = SubResource("StyleBoxFlat_normal")
+theme_hover_stylebox = SubResource("StyleBoxFlat_hover")
 text = "Quit"
 
 [node name="Spacer2" type="Control" parent="VBox"]
