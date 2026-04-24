@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://start_menu"]
+[gd_scene load_steps=10 format=3 uid="uid://start_menu"]
 
 [ext_resource type="Script" path="res://scripts/MenuCamera.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/StartMenu.gd" id="2"]
@@ -29,6 +29,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 script = ExtResource("2")
 
 [node name="MenuCamera" type="Camera3D" parent="."]
@@ -69,20 +70,33 @@ layout_mode = 2
 [node name="HostButton" type="Button" parent="VBox"]
 layout_mode = 2
 custom_minimum_size = Vector2(200, 50)
+theme_normal_stylebox = SubResource("StyleBoxFlat_normal")
+theme_hover_stylebox = SubResource("StyleBoxFlat_hover")
 text = "Host Game"
 
 [node name="JoinButton" type="Button" parent="VBox"]
 layout_mode = 2
 custom_minimum_size = Vector2(200, 50)
+theme_normal_stylebox = SubResource("StyleBoxFlat_normal")
+theme_hover_stylebox = SubResource("StyleBoxFlat_hover")
 text = "Join Game"
 
 [node name="Spacer2" type="Control" parent="VBox"]
 custom_minimum_size = Vector2(0, 15)
 layout_mode = 2
 
+[node name="LocalButton" type="Button" parent="VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(200, 60)
+theme_normal_stylebox = SubResource("StyleBoxFlat_normal")
+theme_hover_stylebox = SubResource("StyleBoxFlat_hover")
+text = "Local Play"
+
 [node name="QuitButton" type="Button" parent="VBox"]
 layout_mode = 2
 custom_minimum_size = Vector2(200, 50)
+theme_normal_stylebox = SubResource("StyleBoxFlat_normal")
+theme_hover_stylebox = SubResource("StyleBoxFlat_hover")
 text = "Quit"
 
 [node name="Spacer3" type="Control" parent="VBox"]
@@ -178,6 +192,7 @@ vertical_alignment = 1
 
 [connection signal="pressed" from="VBox/HostButton" to="." method="_on_host_pressed"]
 [connection signal="pressed" from="VBox/JoinButton" to="." method="_on_join_pressed"]
+[connection signal="pressed" from="VBox/LocalButton" to="." method="_on_local_pressed"]
 [connection signal="pressed" from="VBox/QuitButton" to="." method="_on_quit_pressed"]
 [connection signal="confirmed" from="JoinDialog" to="." method="_on_join_confirmed"]
 [connection signal="confirmed" from="HostDialog" to="." method="_on_host_confirmed"]

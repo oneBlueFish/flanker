@@ -301,6 +301,8 @@ func _current_weapon() -> WeaponData:
 	return weapons[active_slot]
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed:
+		print("[FPSController] _unhandled_input: keycode=", event.keycode)
 	if not active:
 		return
 	if event is InputEventMouseMotion:
@@ -441,7 +443,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	# Broadcast transform to host every N frames (local player only)
-	if multiplayer.has_multiplayer_peer() and _is_local:
+	if multiplayer.has_multiplayer_peer() and _is_local and _peer_id != multiplayer.get_unique_id():
 		_sync_frame += 1
 		if _sync_frame >= PLAYER_SYNC_INTERVAL:
 			_sync_frame = 0
