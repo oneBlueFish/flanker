@@ -1,0 +1,34 @@
+extends Node
+
+const RemotePlayerScene := preload("res://scenes/RemotePlayer.tscn")
+
+var _ghosts: Dictionary = {}
+var _local_peer_id: int = 1
+
+func _ready() -> void:
+	_local_peer_id = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	GameSync.remote_player_updated.connect(_on_remote_player_updated)
+	LobbyManager.player_left.connect(remove_ghost)
+
+func _on_remote_player_updated(peer_id: int, pos: Vector3, rot: Vector3, _team: int) -> void:
+	# Don't create ghost for local player
+	if peer_id == _local_peer_id:
+		return
+	
+	if not _ghosts.has(peer_id):
+		var ghost: Node3D = RemotePlayerScene.instantiate()
+		ghost.name = "RemotePlayer_%d" % peer_id
+		ghost.peer_id = peer_id
+		get_parent().add_child(ghost)
+		_ghosts[peer_id] = ghost
+	
+	var g: Node3D = _ghosts[peer_id]
+	if is_instance_valid(g):
+		g.update_transform(pos, rot)
+
+func remove_ghost(peer_id: int) -> void:
+	if _ghosts.has(peer_id):
+		var g: Node3D = _ghosts[peer_id]
+		if is_instance_valid(g):
+			g.queue_free()
+		_ghosts.erase(peer_id)

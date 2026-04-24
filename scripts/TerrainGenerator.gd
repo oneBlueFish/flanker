@@ -29,9 +29,11 @@ const BIOME_BLEND_X := 10.0
 var secret_paths_cache: Array = []
 
 func _ready() -> void:
+	var seed_val: int = GameSync.game_seed
+	if seed_val == 0:
+		seed_val = randi()
 	var noise := FastNoiseLite.new()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	var seed_val: int = randi()
 	noise.seed = seed_val
 	noise.frequency = 0.018
 	noise.fractal_octaves = 5

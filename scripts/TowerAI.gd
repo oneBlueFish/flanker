@@ -100,6 +100,9 @@ func _shoot(target: Node3D) -> void:
 	get_tree().root.get_child(0).add_child(bullet)
 	bullet.global_position = spawn_pos
 
+	if multiplayer.is_server():
+		LobbyManager.spawn_bullet_visuals.rpc(bullet.global_position, dir, attack_damage, team)
+
 	# Visual feedback: flash
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(1, 1, 0)
