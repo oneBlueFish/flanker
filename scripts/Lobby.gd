@@ -30,6 +30,8 @@ func _ready() -> void:
 	call_deferred("_on_lobby_updated")
 
 func _build_ui() -> void:
+	var ui_theme: Theme = load("res://assets/ui_theme.tres")
+
 	# Background
 	var bg := ColorRect.new()
 	bg.color = Color(0.05, 0.05, 0.05, 0.95)
@@ -121,6 +123,7 @@ func _build_ui() -> void:
 	var switch_btn := Button.new()
 	switch_btn.text = "Switch Team"
 	switch_btn.custom_minimum_size = Vector2(140, 40)
+	switch_btn.theme = ui_theme
 	switch_btn.pressed.connect(_on_switch_team_pressed)
 	actions.add_child(switch_btn)
 
@@ -131,6 +134,7 @@ func _build_ui() -> void:
 	_role_btn = Button.new()
 	_role_btn.text = "Select Role"
 	_role_btn.custom_minimum_size = Vector2(160, 40)
+	_role_btn.theme = ui_theme
 	_role_btn.pressed.connect(_on_role_pressed)
 	actions.add_child(_role_btn)
 
@@ -141,6 +145,7 @@ func _build_ui() -> void:
 	_ready_btn = Button.new()
 	_ready_btn.text = "Ready"
 	_ready_btn.custom_minimum_size = Vector2(120, 40)
+	_ready_btn.theme = ui_theme
 	_ready_btn.pressed.connect(_on_ready_pressed)
 	actions.add_child(_ready_btn)
 
@@ -151,6 +156,7 @@ func _build_ui() -> void:
 	_start_btn = Button.new()
 	_start_btn.text = "Start War"
 	_start_btn.custom_minimum_size = Vector2(160, 50)
+	_start_btn.theme = ui_theme
 	_start_btn.visible = _is_host
 	_start_btn.pressed.connect(_on_start_pressed)
 	actions.add_child(_start_btn)
@@ -162,6 +168,7 @@ func _build_ui() -> void:
 	var leave_btn := Button.new()
 	leave_btn.text = "Leave"
 	leave_btn.custom_minimum_size = Vector2(120, 40)
+	leave_btn.theme = ui_theme
 	leave_btn.pressed.connect(_on_leave_pressed)
 	actions.add_child(leave_btn)
 
@@ -173,6 +180,7 @@ func _build_ui() -> void:
 	vbox.add_child(_status_label)
 
 func _build_role_dialog() -> void:
+	var ui_theme: Theme = load("res://assets/ui_theme.tres")
 	_role_dialog = AcceptDialog.new()
 	_role_dialog.title = "Select Role"
 	_role_dialog.size = Vector2i(300, 350)
@@ -189,6 +197,7 @@ func _build_role_dialog() -> void:
 	for role in LobbyManager.ROLES:
 		var btn := Button.new()
 		btn.text = role
+		btn.theme = ui_theme
 		btn.pressed.connect(_on_role_button_pressed.bind(role))
 		_role_list.add_child(btn)
 		_role_buttons.append(btn)

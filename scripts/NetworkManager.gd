@@ -23,6 +23,7 @@ func is_host() -> bool:
 
 func start_host(port: int = DEFAULT_PORT) -> int:
 	var peer := ENetMultiplayerPeer.new()
+	peer.set_bind_ip("*")
 	var err: int = peer.create_server(port, MAX_CLIENTS)
 	if err != OK:
 		push_error("Failed to start server on port %d: %s" % [port, str(err)])
@@ -59,7 +60,10 @@ func get_peer_address(peer_id: int) -> String:
 	return ""
 
 func _on_peer_connected(id: int) -> void:
-	print("Peer connected: ", id)
+	var addr := ""
+	if _peer and _peer.get_peer(id):
+		addr = " from %s:%d" % [_peer.get_peer(id).get_remote_address(), _peer.get_peer(id).get_remote_port()]
+	print("[NET] Connection request accepted — peer_id=%d%s" % [id, addr])
 	peer_connected.emit(id)
 
 func _on_peer_disconnected(id: int) -> void:
