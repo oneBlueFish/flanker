@@ -20,6 +20,10 @@ func _on_join_pressed() -> void:
 func _on_quit_pressed() -> void:
 	get_tree().quit()
 
+func _on_local_pressed() -> void:
+	print("[StartMenu] Local Play - switching to Main...")
+	get_tree().change_scene_to_file("res://scenes/Main.tscn")
+
 func _on_host_confirmed() -> void:
 	var port_edit: LineEdit = $HostDialog/VBoxContainer/PortEdit
 	var name_edit: LineEdit = $HostDialog/VBoxContainer/NameEdit

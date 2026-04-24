@@ -5,6 +5,7 @@ const COLOR_HOVER := Color(0.3, 0.9, 0.3, 1.0)
 const HOVER_DURATION := 0.1
 
 func _ready() -> void:
+	print("[PauseMenu] _ready called")
 	visible = false
 	$ResumeButton.mouse_entered.connect(_on_resume_hover)
 	$ResumeButton.mouse_exited.connect(_on_resume_normal)
