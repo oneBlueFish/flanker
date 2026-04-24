@@ -277,8 +277,8 @@ func _fire_at(target: Node3D) -> void:
 	bullet.source        = "minion"
 	bullet.shooter_team  = team
 	bullet.velocity      = dir * BULLET_SPEED
-	bullet.global_position = spawn_pos
 	get_tree().root.get_child(0).add_child(bullet)
+	bullet.global_position = spawn_pos
 
 	shoot_audio.play()
 

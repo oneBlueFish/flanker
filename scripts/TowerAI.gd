@@ -97,8 +97,8 @@ func _shoot(target: Node3D) -> void:
 	bullet.source = "tower"
 	bullet.shooter_team = team
 	bullet.velocity = dir * BULLET_SPEED
-	bullet.global_position = spawn_pos
 	get_tree().root.get_child(0).add_child(bullet)
+	bullet.global_position = spawn_pos
 
 	# Visual feedback: flash
 	var mat := StandardMaterial3D.new()
