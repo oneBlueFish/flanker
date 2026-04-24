@@ -187,23 +187,20 @@ func _build_role_dialog() -> void:
 
 	_role_buttons.clear()
 	for role in LobbyManager.ROLES:
-		var btn := CheckBox.new()
+		var btn := Button.new()
 		btn.text = role
-		btn.toggled.connect(_on_role_toggled.bind(role))
+		btn.pressed.connect(_on_role_button_pressed.bind(role))
 		_role_list.add_child(btn)
 		_role_buttons.append(btn)
 
-func _on_role_toggled(pressed: bool, role: String) -> void:
-	if not pressed:
-		return
-	for btn in _role_buttons:
-		if btn.text != role:
-			btn.set_pressed_no_signal(false)
+func _on_role_button_pressed(role: String) -> void:
 	_my_role = role
-	if _is_host:
+	if multiplayer.is_server():
 		LobbyManager.set_role(role)
 	else:
 		LobbyManager.set_role.rpc_id(1, role)
+	_role_dialog.hide()
+	_update_role_buttons()
 
 func _on_lobby_updated() -> void:
 	_refresh_player_list()
@@ -300,9 +297,6 @@ func _update_my_status() -> void:
 	_update_role_buttons()
 
 func _update_role_buttons() -> void:
-	for btn in _role_buttons:
-		btn.set_pressed_no_signal(btn.text == _my_role)
-
 	if _role_btn:
 		_role_btn.text = _my_role if _my_role != "" else "Select Role"
 
