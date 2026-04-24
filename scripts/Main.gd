@@ -56,8 +56,9 @@ var fps_player: CharacterBody3D = null
 
 const WeaponPickupScene := preload("res://scenes/WeaponPickup.tscn")
 const PickupSoundPath   := "res://assets/kenney_ui-audio/Audio/switch1.ogg"
-const StartMenuScene  := preload("res://scenes/StartMenu.tscn")
-const PauseMenuScene  := preload("res://scenes/PauseMenu.tscn")
+const StartMenuScene    := preload("res://scenes/StartMenu.tscn")
+const PauseMenuScene    := preload("res://scenes/PauseMenu.tscn")
+const LoadingScreenScene := preload("res://scenes/LoadingScreen.tscn")
 
 var _start_menu: Control
 var _pause_menu: Control
@@ -283,19 +284,54 @@ func _input(event: InputEvent) -> void:
 
 func _on_start_game() -> void:
 	print("[Main] _on_start_game: game_state=", game_state, " _is_singleplayer=", _is_singleplayer)
+
+	# Show loading screen immediately — TreePlacer/WallPlacer are still pending
+	# (they await 2 process frames before running)
+	var loading_screen = LoadingScreenScene.instantiate()
+	add_child(loading_screen)
+	loading_screen.set_status("Building terrain...")
+	loading_screen.set_progress(20.0)
+	await get_tree().process_frame
+
+	# Terrain is already built (synchronous _ready). Trees + walls are deferred.
+	loading_screen.set_status("Placing trees...")
+	loading_screen.set_progress(35.0)
+	await $World/TreePlacer.done
+
+	loading_screen.set_status("Placing cover objects...")
+	loading_screen.set_progress(55.0)
+	await $World/WallPlacer.done
+
+	# Hide start menu and disable its camera
+	_start_menu.visible = false
+	var menu_cam: Node = _start_menu.get_node_or_null("MenuCamera")
+	if menu_cam:
+		menu_cam.set("current", false)
+		menu_cam.visible = false
+
+	loading_screen.set_status("Spawning player...")
+	loading_screen.set_progress(65.0)
+	await get_tree().process_frame
+
 	player_start_team = randi() % 2
 	fps_player = FPSPlayerScene.instantiate()
 	fps_player.set("player_team", player_start_team)
 	add_child(fps_player)
 	fps_player.add_to_group("player")
+
+	loading_screen.set_status("Setting up bases...")
+	loading_screen.set_progress(72.0)
+	await get_tree().process_frame
+
+	_setup_bases()
+
+	loading_screen.set_status("Loading audio & HUD...")
+	loading_screen.set_progress(82.0)
+	await get_tree().process_frame
+
 	game_state = GameState.PLAYING
-	_start_menu.visible = false
-	var menu_cam: Node = _start_menu.get_node_or_null("MenuCamera")
-	if menu_cam:
-		menu_cam.visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_HUD_set_visible(true)
-	_setup_bases()
 	_set_mode(true)
 	get_tree().set_auto_accept_quit(true)
 	wave_announce_label.visible = false
@@ -306,9 +342,20 @@ func _on_start_game() -> void:
 	_setup_hud_for_player()
 	var spawn_z: float = 84.0 if player_start_team == 0 else -84.0
 	fps_player.global_position = Vector3(0.0, 10.0, spawn_z)
-	call_deferred("_spawn_weapon_pickups")
-	call_deferred("_setup_lane_data")
-	call_deferred("_spawn_preset_towers")
+
+	loading_screen.set_status("Spawning towers & pickups...")
+	loading_screen.set_progress(92.0)
+	await get_tree().process_frame
+
+	_spawn_weapon_pickups()
+	_setup_lane_data()
+	_spawn_preset_towers()
+
+	loading_screen.set_status("Ready!")
+	loading_screen.set_progress(100.0)
+	await get_tree().process_frame
+
+	loading_screen.finish()
 
 func _on_resume_game() -> void:
 	toggle_pause(false)
@@ -323,7 +370,10 @@ func toggle_pause(paused: bool) -> void:
 		_pause_menu.visible = true
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 		fps_player.set_active(false)
+		# Keep FPS camera current so pause overlay renders over the game view
 		rts_camera.current = false
+		if fps_player and fps_player.has_node("Camera3D"):
+			fps_player.get_node("Camera3D").current = true
 		crosshair.visible = false
 	else:
 		game_state = GameState.PLAYING

@@ -21,7 +21,7 @@ const PLATEAU_BLEND  := 4.0
 # Peaks
 const PEAK_COUNT  := 5
 const PEAK_HEIGHT := 22.0
-const SNOW_LINE   := 13.0
+const SNOW_LINE   := 15.0
 
 # Biome
 const BIOME_BLEND_X := 10.0
@@ -39,6 +39,12 @@ func _ready() -> void:
 	noise.fractal_octaves = 5
 	noise.fractal_gain = 0.5
 	noise.fractal_lacunarity = 2.0
+
+	var noise_bump := FastNoiseLite.new()
+	noise_bump.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_bump.seed = seed_val + 1
+	noise_bump.frequency = 0.4
+	noise_bump.fractal_octaves = 2
 
 	var verts_per_side := GRID_STEPS + 1
 	var half := GRID_SIZE / 2.0
@@ -63,6 +69,10 @@ func _ready() -> void:
 	plateau_weights.resize(verts_per_side * verts_per_side)
 	var peak_weights: Array = []
 	peak_weights.resize(verts_per_side * verts_per_side)
+	var lane_blends: Array = []
+	lane_blends.resize(verts_per_side * verts_per_side)
+	var snow_ts: Array = []
+	snow_ts.resize(verts_per_side * verts_per_side)
 
 	for zi in range(verts_per_side):
 		for xi in range(verts_per_side):
@@ -137,6 +147,8 @@ func _ready() -> void:
 			heights[zi * verts_per_side + xi] = h
 			plateau_weights[zi * verts_per_side + xi] = plat_w
 			peak_weights[zi * verts_per_side + xi] = pk_w
+			lane_blends[zi * verts_per_side + xi] = lane_blend
+			snow_ts[zi * verts_per_side + xi] = smoothstep(SNOW_LINE, PEAK_HEIGHT, h)
 
 	# ── Build ArrayMesh ────────────────────────────────────────────────────────
 	var verts   := PackedVector3Array()
@@ -171,8 +183,8 @@ func _ready() -> void:
 			base_col = base_col.lerp(Color(0.46, 0.42, 0.40), pk_w)
 
 			# Step 4 — snow cap
-			var snow_t: float = smoothstep(SNOW_LINE, PEAK_HEIGHT, h)
-			base_col = base_col.lerp(Color(0.92, 0.95, 1.0), snow_t)
+			var snow_t: float = snow_ts[zi * verts_per_side + xi]
+			base_col = base_col.lerp(Color(0.96, 0.97, 1.0), snow_t)
 
 			colors.append(base_col)
 			normals.append(Vector3.UP)
@@ -201,6 +213,23 @@ func _ready() -> void:
 		normal_accum[ic] += fn
 	for i in range(normals.size()):
 		normals[i] = normal_accum[i].normalized()
+
+	# ── Bump perturbation — perturb smooth normals with high-freq noise ─────────
+	for zi in range(verts_per_side):
+		for xi in range(verts_per_side):
+			var idx := zi * verts_per_side + xi
+			var wx := -half + xi * step
+			var wz := -half + zi * step
+			var lb: float = lane_blends[idx]
+			var st: float = snow_ts[idx]
+			# Suppress on lanes and snow caps; moderate strength elsewhere
+			var bump_str: float = lb * (1.0 - st) * 0.6
+			if bump_str < 0.001:
+				continue
+			var eps: float = step
+			var dh_x: float = noise_bump.get_noise_2d(wx + eps, wz) - noise_bump.get_noise_2d(wx - eps, wz)
+			var dh_z: float = noise_bump.get_noise_2d(wx, wz + eps) - noise_bump.get_noise_2d(wx, wz - eps)
+			normals[idx] = (normals[idx] + Vector3(dh_x, 0.0, dh_z) * bump_str).normalized()
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -238,6 +267,7 @@ func _ready() -> void:
 
 	print("Terrain: verts=%d seed=%d plateaus=%d peaks=%d secret_paths=%d grass_left=%s" \
 		% [verts.size(), seed_val, plateaus.size(), peaks.size(), secret_paths.size(), str(grass_left)])
+	LoadingState.report("Building terrain...", 25.0)
 
 # ── Secret path generation ─────────────────────────────────────────────────────
 func _gen_secret_paths(seed_val: int) -> Array:

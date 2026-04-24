@@ -1,12 +1,7 @@
-[gd_scene load_steps=4 format=3 uid="uid://pause_menu"]
+[gd_scene load_steps=2 format=3 uid="uid://pause_menu"]
 
 [ext_resource type="Script" path="res://scripts/PauseMenu.gd" id="1"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_normal"]
-bg_color = Color(0.12, 0.12, 0.12, 0.9)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hover"]
-bg_color = Color(0.25, 0.25, 0.25, 0.95)
+[ext_resource type="Theme" path="res://assets/ui_theme.tres" id="2"]
 
 [node name="PauseMenu" type="Control"]
 layout_mode = 3
@@ -23,54 +18,53 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0, 0, 0, 0.7)
-
-[node name="ResumeButton" type="Button" parent="."]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.45
-anchor_right = 0.5
-anchor_bottom = 0.45
-offset_left = -80.0
-offset_top = -25.0
-offset_right = 80.0
-offset_bottom = 25.0
-grow_horizontal = 2
-theme_normal_stylebox = SubResource("StyleBoxFlat_normal")
-theme_hover_stylebox = SubResource("StyleBoxFlat_hover")
-text = "Resume"
-
-[node name="QuitButton" type="Button" parent="."]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.55
-anchor_right = 0.5
-anchor_bottom = 0.55
-offset_left = -80.0
-offset_top = -25.0
-offset_right = 80.0
-offset_bottom = 25.0
-grow_horizontal = 2
-theme_normal_stylebox = SubResource("StyleBoxFlat_normal")
-theme_hover_stylebox = SubResource("StyleBoxFlat_hover")
-text = "Quit"
+color = Color(0, 0, 0, 0.65)
 
 [node name="Title" type="Label" parent="."]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
-anchor_top = 0.35
+anchor_top = 0.38
 anchor_right = 0.5
-anchor_bottom = 0.35
-offset_left = -100.0
-offset_top = -20.0
-offset_right = 100.0
-offset_bottom = 20.0
+anchor_bottom = 0.38
+offset_left = -120.0
+offset_top = -24.0
+offset_right = 120.0
+offset_bottom = 24.0
 text = "PAUSED"
 horizontal_alignment = 1
-add_theme_font_size_override = 48
+theme_override_colors/font_color = Color(1.0, 0.35, 0.1, 1)
+theme_override_font_sizes/font_size = 48
+
+[node name="ResumeButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.48
+anchor_right = 0.5
+anchor_bottom = 0.48
+offset_left = -130.0
+offset_top = -26.0
+offset_right = 130.0
+offset_bottom = 26.0
+grow_horizontal = 2
+theme = ExtResource("2")
+text = "RESUME"
+
+[node name="QuitButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.57
+anchor_right = 0.5
+anchor_bottom = 0.57
+offset_left = -130.0
+offset_top = -26.0
+offset_right = 130.0
+offset_bottom = 26.0
+grow_horizontal = 2
+theme = ExtResource("2")
+text = "QUIT TO DESKTOP"
 
 [connection signal="pressed" from="ResumeButton" to="." method="_on_resume_pressed"]
 [connection signal="pressed" from="QuitButton" to="." method="_on_quit_pressed"]

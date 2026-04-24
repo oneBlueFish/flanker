@@ -1,5 +1,7 @@
 extends Node3D
 
+signal done
+
 const TREE_PATHS := [
 	"res://assets/kenney_fantasy-town-kit/Models/GLB format/tree.glb",
 	"res://assets/kenney_fantasy-town-kit/Models/GLB format/tree-crooked.glb",
@@ -33,6 +35,9 @@ const SECRET_PATH_CLEAR_WIDTH := 5.0
 
 var _random_clearing_centers: Array[Vector2] = []
 var _random_clearing_radii: Array[float] = []
+
+# Set to a value > 0 before add_child to override TREE_DENSITY (e.g. menu background)
+var menu_density: float = -1.0
 
 @onready var terrain_body: StaticBody3D = null
 
@@ -87,9 +92,10 @@ func _place_trees() -> void:
 		return
 	
 	var placed: int = 0
+	var density: float = menu_density if menu_density > 0.0 else TREE_DENSITY
 	for gx in range(GRID_STEPS):
 		for gz in range(GRID_STEPS):
-			if randf() > TREE_DENSITY:
+			if randf() > density:
 				continue
 			
 			var wx: float = (float(gx) / float(GRID_STEPS) - 0.5) * GRID_SIZE
@@ -103,6 +109,9 @@ func _place_trees() -> void:
 			placed += 1
 	
 	print("TreePlacer: placed ", placed, " trees")
+	if menu_density < 0.0:
+		LoadingState.report("Placing trees...", 45.0)
+	done.emit()
 
 func _place_tree(pos: Vector3, tree_scenes: Array[PackedScene]) -> void:
 	var terrain_y: float = _get_terrain_height(pos)

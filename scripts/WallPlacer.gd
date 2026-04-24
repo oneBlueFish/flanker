@@ -1,5 +1,7 @@
 extends Node3D
 
+signal done
+
 const WALL_PATHS := [
 	"res://assets/kenney_fantasy-town-kit/Models/GLB format/wall.glb",
 	"res://assets/kenney_fantasy-town-kit/Models/GLB format/wall-wood.glb",
@@ -121,6 +123,8 @@ func _place_walls() -> void:
 				placed_crates += 1
 	
 	print("WallPlacer: placed ", placed_walls, " walls and ", placed_crates, " crates")
+	LoadingState.report("Placing cover objects...", 55.0)
+	done.emit()
 
 func _place_wall(pos: Vector3) -> void:
 	if _wall_scenes.is_empty():

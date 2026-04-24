@@ -321,19 +321,8 @@ func _find_target() -> Node3D:
 			best = b
 	return best
 
-func _is_in_darkness(pos: Vector3) -> bool:
-	var lamp_placer: Node = get_node_or_null("/root/Main/World/LampPlacer")
-	if lamp_placer == null:
-		return false
-	var scripts: Array = lamp_placer.get("lamp_scripts") if lamp_placer.get("lamp_scripts") != null else []
-	for lamp in scripts:
-		if lamp.is_dark:
-			continue
-		# lamp position is its parent StaticBody3D world position
-		var lamp_pos: Vector3 = lamp.get_parent().global_position
-		if lamp_pos.distance_to(pos) <= 22.0:
-			return false
-	return true
+func _is_in_darkness(_pos: Vector3) -> bool:
+	return false
 
 func _fire_at(target: Node3D) -> void:
 	if not is_inside_tree() or not is_instance_valid(target) or not target.is_inside_tree():
