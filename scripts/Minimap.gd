@@ -20,7 +20,7 @@ var _lane_pixels: Array = []
 var _blue_base_px: Vector2
 var _red_base_px: Vector2
 
-@onready var _fps_player: CharacterBody3D = get_node("/root/Main/FPSPlayer")
+var _fps_player: CharacterBody3D = null
 
 const COL_BLUE_TOWER := Color(0.1, 0.6, 1.0, 1.0)
 const COL_RED_TOWER  := Color(1.0, 0.4, 0.1, 1.0)

@@ -2,7 +2,6 @@ extends Node
 
 const RESPAWN_DELAY := 5.0
 const CHARACTER_LETTERS := ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r"]
-const CHARACTER_LETTERS := ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r"]
 const BLUE_SPAWN    := Vector3(0.0, 10.0, 84.0)
 const RED_SPAWN     := Vector3(0.0, 10.0, -84.0)
 
