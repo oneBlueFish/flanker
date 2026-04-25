@@ -49,7 +49,7 @@ func can_place(world_pos: Vector3, team: int) -> bool:
 	return true
 
 func place_tower(world_pos: Vector3, team: int) -> bool:
-	# Snap XZ to grid; Y comes from caller (terrain height)
+	# Server-side only: validate, deduct points, spawn locally on server
 	world_pos.x = snappedf(world_pos.x, 2.0)
 	world_pos.z = snappedf(world_pos.z, 2.0)
 
@@ -61,19 +61,23 @@ func place_tower(world_pos: Vector3, team: int) -> bool:
 		print("Not enough points to place tower. Need %d, have %d" % [TOWER_COST, TeamData.get_points(team)])
 		return false
 
+	spawn_tower_local(world_pos, team)
+	print("Tower placed at %s for team %d, spent %d points" % [world_pos, team, TOWER_COST])
+	return true
+
+func spawn_tower_local(world_pos: Vector3, team: int) -> void:
+	# Called on all peers: server via place_tower, clients via RPC
+	if _tower_scene == null:
+		_tower_scene = load(TOWER_SCENE)
 	var tower = _tower_scene.instantiate()
 	tower.global_position = world_pos
 	var main: Node = get_tree().root.get_node("Main")
 	main.add_child(tower)
 	tower.setup(team)
 
-	# Clear trees around placement
 	var tree_placer: Node = main.get_node_or_null("World/TreePlacer")
 	if tree_placer and tree_placer.has_method("clear_trees_at"):
 		tree_placer.clear_trees_at(world_pos, 14.0)
-
-	print("Tower placed at %s for team %d, spent %d points" % [world_pos, team, TOWER_COST])
-	return true
 
 func get_tower_cost() -> int:
 	return TOWER_COST

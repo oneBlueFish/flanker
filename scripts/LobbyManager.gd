@@ -124,13 +124,16 @@ func load_game_scene(path: String) -> void:
 	game_start_requested.emit()
 	get_tree().change_scene_to_file(path)
 
-@rpc("authority", "reliable")
+@rpc("authority", "call_local", "reliable")
 func notify_game_seed(new_seed: int) -> void:
 	GameSync.game_seed = new_seed
+	LaneData.regenerate_for_new_game()
 
 func start_game(path: String) -> void:
-	GameSync.game_seed = randi()
-	notify_game_seed.rpc(GameSync.game_seed)
+	var s: int = randi()
+	if s == 0:
+		s = 1  # never send seed=0; TerrainGenerator fallback path means client diverges
+	notify_game_seed.rpc(s)  # call_local — sets GameSync.game_seed on server too
 	supporter_claimed = { 0: false, 1: false }
 	player_death_counts.clear()
 	game_started = true
@@ -202,7 +205,7 @@ var _bullet_scene: PackedScene
 func _init_bullet_sync() -> void:
 	_bullet_scene = preload("res://scenes/Bullet.tscn")
 
-@rpc("authority", "reliable")
+@rpc("authority", "call_remote", "reliable")
 func spawn_bullet_visuals(pos: Vector3, dir: Vector3, damage: float, shooter_team: int) -> void:
 	if _bullet_scene == null:
 		_bullet_scene = preload("res://scenes/Bullet.tscn")
@@ -219,7 +222,7 @@ var _minion_scene: PackedScene
 func _init_minion_sync() -> void:
 	_minion_scene = preload("res://scenes/Minion.tscn")
 
-@rpc("authority", "reliable")
+@rpc("authority", "call_remote", "reliable")
 func spawn_minion_visuals(team: int, spawn_pos: Vector3, waypts: Array[Vector3], lane_i: int, minion_id: int) -> void:
 	if _minion_scene == null:
 		_minion_scene = preload("res://scenes/Minion.tscn")
@@ -231,7 +234,7 @@ func spawn_minion_visuals(team: int, spawn_pos: Vector3, waypts: Array[Vector3],
 	var spawner: Node = main.get_node("MinionSpawner")
 	spawner.spawn_for_network(team, spawn_pos, waypts, lane_i, minion_id)
 
-@rpc("authority", "reliable")
+@rpc("authority", "call_remote", "reliable")
 func kill_minion_visuals(minion_path: NodePath) -> void:
 	var main: Node = get_tree().root.get_node("Main")
 	if main == null:
@@ -311,3 +314,66 @@ func _find_peer_id_from_node(node: Node) -> int:
 		if id_str.is_valid_int():
 			return id_str.to_int()
 	return -1
+
+# ── Minion sync ───────────────────────────────────────────────────────────────
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func sync_minion_states(ids: PackedInt32Array, positions: PackedVector3Array,
+		rotations: PackedFloat32Array, healths: PackedFloat32Array) -> void:
+	var main: Node = get_tree().root.get_node_or_null("Main")
+	if main == null:
+		MinionDebug.log_rpc("sync_minion_states_NOROOT", "count=%d" % ids.size())
+		return
+	var found_count: int = 0
+	var missing: Array = []
+	for i in ids.size():
+		var minion: Node = main.get_node_or_null("Minion_%d" % ids[i])
+		if minion != null and minion.has_method("apply_puppet_state"):
+			found_count += 1
+			minion.apply_puppet_state(positions[i], rotations[i], healths[i])
+		else:
+			missing.append(ids[i])
+	MinionDebug.log_rpc("sync_minion_states", "count=%d found=%d missing=%s" % [ids.size(), found_count, str(missing)])
+
+# ── Tower sync ────────────────────────────────────────────────────────────────
+
+@rpc("any_peer", "reliable")
+func request_place_tower(world_pos: Vector3, team: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id: int = _sender_id()
+	var info: Dictionary = players.get(id, {})
+	if info.get("team", -1) != team:
+		return
+	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
+	if build_sys == null:
+		return
+	if build_sys.place_tower(world_pos, team):
+		spawn_tower_visuals.rpc(world_pos, team)
+		sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
+
+@rpc("authority", "call_remote", "reliable")
+func spawn_tower_visuals(world_pos: Vector3, team: int) -> void:
+	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
+	if build_sys != null and build_sys.has_method("spawn_tower_local"):
+		build_sys.spawn_tower_local(world_pos, team)
+
+# ── TeamData sync ─────────────────────────────────────────────────────────────
+
+@rpc("authority", "call_remote", "reliable")
+func sync_team_points(blue: int, red: int) -> void:
+	TeamData.sync_from_server(blue, red)
+
+# ── Wave info sync ────────────────────────────────────────────────────────────
+
+@rpc("authority", "call_remote", "reliable")
+func sync_wave_info(wave_num: int, next_in: int) -> void:
+	var main: Node = get_tree().root.get_node_or_null("Main")
+	if main != null and main.has_method("update_wave_info"):
+		main.update_wave_info(wave_num, next_in)
+
+@rpc("authority", "call_remote", "reliable")
+func sync_wave_announcement(wave_num: int) -> void:
+	var main: Node = get_tree().root.get_node_or_null("Main")
+	if main != null and main.has_method("show_wave_announcement"):
+		main.show_wave_announcement(wave_num)

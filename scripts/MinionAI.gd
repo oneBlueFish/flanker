@@ -28,6 +28,14 @@ var _strafe_phase   := 0.0
 var points_label: Label = null
 var hud_ui: Control = null
 
+# Multiplayer: server drives AI, clients are puppets
+var is_puppet: bool = false
+var _physics_process_disabled: bool = false
+var _minion_id: int = 0
+var _puppet_target_pos: Vector3 = Vector3.ZERO
+var _puppet_target_rot: float = 0.0
+var _debug_frame: int = 0  # throttle per-minion debug logs
+
 var waypoints: Array[Vector3] = []
 var current_waypoint := 0
 
@@ -174,6 +182,8 @@ func setup(p_team: int, p_waypoints: Array[Vector3], p_lane: int) -> void:
 	_strafe_phase = randf() * TAU
 
 func _physics_process(delta: float) -> void:
+	if is_puppet:
+		return
 	if _dead:
 		return
 
@@ -230,6 +240,31 @@ func _physics_process(delta: float) -> void:
 		_apply_separation()
 
 	move_and_slide()
+
+func _process(delta: float) -> void:
+	if not is_puppet or _dead:
+		return
+	global_position = global_position.lerp(_puppet_target_pos, delta * 12.0)
+	rotation.y = lerp_angle(rotation.y, _puppet_target_rot, delta * 12.0)
+	var dist: float = global_position.distance_to(_puppet_target_pos)
+	if dist > 0.15:
+		_play_anim("walk")
+	else:
+		_play_anim("idle")
+	_debug_frame += 1
+	if _debug_frame >= 60:
+		_debug_frame = 0
+		MinionDebug.log_puppet_move(_minion_id, global_position, _puppet_target_pos, dist)
+
+func apply_puppet_state(pos: Vector3, rot: float, hp: float) -> void:
+	if is_puppet and not _physics_process_disabled:
+		set_physics_process(false)
+		_physics_process_disabled = true
+	_puppet_target_pos = pos
+	_puppet_target_rot = rot
+	if hp <= 0.0 and not _dead:
+		MinionDebug.log_die(_minion_id, true, "apply_puppet_state hp<=0")
+		_die()
 
 func _approach_with_strafe(target: Node3D, _delta: float) -> void:
 	var to_target: Vector3 = target.global_position - global_position
@@ -361,15 +396,21 @@ func _fire_at(target: Node3D) -> void:
 	shoot_audio.play()
 
 func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
+	if is_puppet:
+		MinionDebug.log_take_damage(_minion_id, amount, health, true)
+		return  # Clients don't process damage — server only
 	if _dead:
 					return
 	health -= amount
+	MinionDebug.log_take_damage(_minion_id, amount, health, false)
 	if health <= 0.0:
 		_die()
 		var awarding_team: int = _killer_team if _killer_team >= 0 else 0
 		var pts: int = 10 if _killer_team == -1 else 5
 		TeamData.add_points(awarding_team, pts)
 		_update_points_label()
+		if multiplayer.is_server():
+			LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
 
 func _create_hud_element() -> void:
 	var entity_hud := get_node_or_null("/root/Main/HUD/HUDOverlay/EntityHUD")
@@ -389,6 +430,7 @@ func _update_points_label() -> void:
 func _die() -> void:
 	if _dead:
 		return
+	MinionDebug.log_die(_minion_id, is_puppet, "normal")
 	_dead = true
 	remove_from_group("minions")
 	_play_anim("death")

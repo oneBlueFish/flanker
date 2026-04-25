@@ -217,7 +217,16 @@ func _unhandled_input(event: InputEvent) -> void:
 func _try_place_tower(_screen_pos: Vector2) -> void:
 	if build_system == null or not _ghost_valid:
 		return
-	build_system.place_tower(_ghost_world_pos, _player_team)
+	if multiplayer.has_multiplayer_peer():
+		# Multiplayer: route through server for validation
+		if multiplayer.is_server():
+			if build_system.place_tower(_ghost_world_pos, _player_team):
+				LobbyManager.spawn_tower_visuals.rpc(_ghost_world_pos, _player_team)
+				LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
+		else:
+			LobbyManager.request_place_tower.rpc_id(1, _ghost_world_pos, _player_team)
+	else:
+		build_system.place_tower(_ghost_world_pos, _player_team)
 
 # ── Fog of war ───────────────────────────────────────────────────────────────
 

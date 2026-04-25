@@ -79,6 +79,9 @@ func _spawn_menu_world() -> void:
 	trees.set("menu_density", 0.1)
 	world.add_child(trees)
 
+	# Reset seed to 0 so multiplayer seed guard works correctly if RPC is missed
+	GameSync.game_seed = 0
+
 func _on_host_pressed() -> void:
 	_host_dialog.popup_centered()
 

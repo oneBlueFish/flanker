@@ -31,6 +31,8 @@ var secret_paths_cache: Array = []
 func _ready() -> void:
 	var seed_val: int = GameSync.game_seed
 	if seed_val == 0:
+		if multiplayer.has_multiplayer_peer():
+			push_error("TerrainGenerator: game_seed is 0 in multiplayer — seed RPC missed! Terrain will diverge.")
 		seed_val = randi()
 	var noise := FastNoiseLite.new()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
