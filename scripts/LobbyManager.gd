@@ -15,6 +15,7 @@ var _dirty := false
 signal lobby_updated
 signal game_start_requested
 signal player_joined(id: int, info: Dictionary)
+signal kicked_from_server
 signal player_left(id: int)
 signal role_slots_updated(claimed: Dictionary)
 
@@ -196,9 +197,11 @@ func _on_connected_to_server() -> void:
 
 func _on_server_disconnected() -> void:
 	print("Server disconnected")
+	# Close the peer immediately so no in-flight RPCs hit a dead connection
+	NetworkManager.close_connection()
 	players.clear()
 	game_started = false
-	NetworkManager.close_connection()
+	kicked_from_server.emit()
 
 var _bullet_scene: PackedScene
 

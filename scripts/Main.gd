@@ -114,7 +114,12 @@ func _setup_multiplayer_game() -> void:
 	_spawn_remote_player_manager()
 	_randomize_time_of_day()
 	_pick_minion_characters()
+	LobbyManager.kicked_from_server.connect(_on_kicked_from_server)
 	_start_multiplayer_game()
+
+func _on_kicked_from_server() -> void:
+	print("[Main] server closed — returning to main menu")
+	get_tree().change_scene_to_file("res://scenes/StartMenu.tscn")
 
 func _spawn_remote_player_manager() -> void:
 	if not multiplayer.has_multiplayer_peer():
