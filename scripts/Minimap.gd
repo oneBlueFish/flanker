@@ -74,9 +74,11 @@ func _draw() -> void:
 		if not is_instance_valid(minion):
 			continue
 		var gp: Vector3 = minion.global_position
+		var team: int = minion.get("team") if minion.get("team") != null else 0
+		if _is_fogged(gp, team):
+			continue
 		var px: Vector2 = _world_to_map(Vector2(gp.x, gp.z))
 		if _in_bounds(px):
-			var team: int = minion.get("team") if minion.get("team") != null else 0
 			var col: Color = COL_BLUE_MINION if team == 0 else COL_RED_MINION
 			draw_circle(px, 2.5, col)
 
@@ -103,6 +105,8 @@ func _draw() -> void:
 			if tower_name and "Tower" in tower_name:
 				var tower_team: int = tower.get("team") if tower.has_method("get") and tower.get("team") != null else 0
 				var tp: Vector3 = tower.global_position
+				if _is_fogged(tp, tower_team):
+					continue
 				var px: Vector2 = _world_to_map(Vector2(tp.x, tp.z))
 				if _in_bounds(px):
 					var tower_col: Color = COL_BLUE_TOWER if tower_team == 0 else COL_RED_TOWER
@@ -122,3 +126,33 @@ func _world_to_map(xz: Vector2) -> Vector2:
 
 func _in_bounds(px: Vector2) -> bool:
 	return px.x >= 0.0 and px.x <= MINIMAP_SIZE and px.y >= 0.0 and px.y <= MINIMAP_SIZE
+
+# Returns true if the position should be hidden by fog (enemy + outside vision + RTS mode active).
+func _is_fogged(world_pos: Vector3, node_team: int) -> bool:
+	var rts_cam: Camera3D = get_node_or_null("/root/Main/RTSCamera")
+	if rts_cam == null or not rts_cam.current:
+		return false  # FPS mode — no fog
+
+	var main: Node = get_node_or_null("/root/Main")
+	if main == null:
+		return false
+
+	var player_team: int = main.get("player_start_team") if main.get("player_start_team") != null else 0
+	if node_team == player_team:
+		return false  # friendly — always visible
+
+	# Check player vision
+	if main.get("fps_player") != null and is_instance_valid(main.fps_player):
+		if world_pos.distance_to(main.fps_player.global_position) <= 35.0:
+			return false
+
+	# Check friendly minion vision
+	for minion in get_tree().get_nodes_in_group("minions"):
+		if not is_instance_valid(minion):
+			continue
+		if minion.get("team") != player_team:
+			continue
+		if world_pos.distance_to(minion.global_position) <= 25.0:
+			return false
+
+	return true

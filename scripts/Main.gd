@@ -126,6 +126,7 @@ func _spawn_local_player() -> void:
 	
 	var spawn_z: float = 84.0 if player_start_team == 0 else -84.0
 	fps_player.global_position = Vector3(0.0, 10.0, spawn_z)
+	rts_camera.setup(player_start_team)
 
 func _start_multiplayer_game() -> void:
 	game_state = GameState.PLAYING
@@ -354,6 +355,7 @@ func _on_start_game() -> void:
 	_setup_hud_for_player()
 	var spawn_z: float = 84.0 if player_start_team == 0 else -84.0
 	fps_player.global_position = Vector3(0.0, 10.0, spawn_z)
+	rts_camera.setup(player_start_team)
 
 	loading_screen.set_status("Spawning towers & pickups...")
 	loading_screen.set_progress(92.0)

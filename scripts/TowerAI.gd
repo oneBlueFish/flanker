@@ -1,12 +1,11 @@
 extends StaticBody3D
 
-const BULLET_SPEED := 84.0
-const BulletScene := preload("res://scenes/Bullet.tscn")
+const BulletScene := preload("res://scenes/Cannonball.tscn")
 
 var team := 0  # which team OWNS this tower (attacks enemies)
-var health := 300.0
-const MAX_HEALTH := 300.0
-var attack_range := 15.0
+var health := 900.0
+const MAX_HEALTH := 900.0
+var attack_range := 30.0
 var attack_damage := 50.0
 var attack_cooldown := 1.0
 var _attack_timer := 0.0
@@ -100,30 +99,15 @@ func _find_target() -> Node3D:
 func _shoot(target: Node3D) -> void:
 	var spawn_pos: Vector3 = global_position + Vector3(0.0, 2.0, 0.0)
 	var aim_pos: Vector3 = target.global_position + Vector3(0.0, 0.5, 0.0)
-	var dir: Vector3 = (aim_pos - spawn_pos).normalized()
-	dir.y += 0.04
-	dir = dir.normalized()
 
-	var bullet: Node3D = BulletScene.instantiate()
-	bullet.damage = attack_damage
-	bullet.source = "tower"
-	bullet.shooter_team = team
-	bullet.velocity = dir * BULLET_SPEED
-	get_tree().root.get_child(0).add_child(bullet)
-	bullet.global_position = spawn_pos
-
-	if multiplayer.is_server():
-		LobbyManager.spawn_bullet_visuals.rpc(bullet.global_position, dir, attack_damage, team)
-
-	# Visual feedback: flash
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(1, 1, 0)
-	mesh.material_override = mat
-	await get_tree().create_timer(0.1).timeout
-	if not _dead:
-		var base_mat := StandardMaterial3D.new()
-		base_mat.albedo_color = Color(0.1, 0.6, 1.0) if team == 0 else Color(1.0, 0.4, 0.1)
-		mesh.material_override = base_mat
+	var ball: Node3D = BulletScene.instantiate()
+	ball.damage = attack_damage
+	ball.source = "cannonball"
+	ball.shooter_team = team
+	ball.target_pos = aim_pos
+	# Position must be set before add_child so _ready() computes arc from correct origin
+	ball.position = spawn_pos
+	get_tree().root.get_child(0).add_child(ball)
 
 func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
 	if _dead:

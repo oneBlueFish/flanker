@@ -246,3 +246,11 @@ func _is_in_random_clearing(pos: Vector3) -> bool:
 		if pos2.distance_to(_random_clearing_centers[i]) < _random_clearing_radii[i]:
 			return true
 	return false
+
+# Remove all tree nodes and their collision bodies within radius of world_pos (XZ).
+func clear_trees_at(world_pos: Vector3, radius: float) -> void:
+	var center := Vector2(world_pos.x, world_pos.z)
+	for child in get_children():
+		var child_pos := Vector2(child.position.x, child.position.z)
+		if child_pos.distance_to(center) <= radius:
+			child.queue_free()
