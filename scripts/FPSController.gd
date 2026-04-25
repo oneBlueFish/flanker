@@ -88,6 +88,11 @@ const BOB_H_AMP   := 0.02
 const BOB_V_AMP   := 0.01
 const BOB_LERP    := 10.0
 
+# Slow debuff (applied by Slow Tower)
+var _slow_timer: float = 0.0
+var _slow_mult:  float = 1.0
+var _slow_trail: GPUParticles3D = null
+
 # 2-slot weapon inventory; slot 0 = default pistol, slot 1 = empty initially
 var weapons: Array = [null, null]
 var active_slot: int = 0
@@ -159,6 +164,7 @@ func _ready() -> void:
 	_update_weapon_label()
 	_update_ammo_hud()
 	call_deferred("_init_avatar")
+	call_deferred("_init_slow_trail")
 	if _is_local:
 		call_deferred("_apply_dof_settings")
 		GraphicsSettings.settings_changed.connect(_apply_dof_settings)
@@ -168,6 +174,35 @@ func _apply_dof_settings() -> void:
 		return
 	camera.attributes.dof_blur_far_enabled = GraphicsSettings.dof_enabled
 	camera.attributes.dof_blur_near_enabled = false  # re-controlled per-frame when zoomed
+
+func _init_slow_trail() -> void:
+	var p := GPUParticles3D.new()
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = Vector3.UP
+	pm.spread = 60.0
+	pm.initial_velocity_min = 0.5
+	pm.initial_velocity_max = 2.0
+	pm.gravity = Vector3(0.0, 2.0, 0.0)
+	pm.scale_min = 0.08
+	pm.scale_max = 0.2
+	var mesh := QuadMesh.new()
+	mesh.size = Vector2(0.15, 0.15)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(0.3, 0.7, 1.0, 0.8)
+	mat.emission_enabled = true
+	mat.emission = Color(0.1, 0.5, 1.0)
+	mat.emission_energy_multiplier = 2.0
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mesh.material = mat
+	p.process_material = pm
+	p.draw_pass_1 = mesh
+	p.amount = 20
+	p.lifetime = 0.6
+	p.emitting = false
+	p.position = Vector3(0.0, 0.5, 0.0)
+	add_child(p)
+	_slow_trail = p
 	camera.attributes.dof_blur_amount = GraphicsSettings.dof_blur_amount
 
 func _init_avatar() -> void:
@@ -239,6 +274,21 @@ func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void
 		var awarding_team: int = _killer_team if _killer_team >= 0 else 1
 		TeamData.add_points(awarding_team, 50)
 		_update_points_label()
+
+func heal(amount: float) -> void:
+	if _dead:
+		return
+	var max_hp: float = DEFAULT_HP * player_health_mult
+	hp = min(hp + amount, max_hp)
+	_update_health_bar()
+
+func apply_slow(duration: float, mult: float) -> void:
+	if not _is_local:
+		return
+	_slow_timer = max(_slow_timer, duration)
+	_slow_mult  = min(_slow_mult, mult)
+	if _slow_trail != null and is_instance_valid(_slow_trail):
+		_slow_trail.emitting = true
 
 func _load_default_weapon() -> void:
 	var default_weapon: WeaponData = load(DEFAULT_WEAPON_PATH)
@@ -446,7 +496,16 @@ func _select_slot(slot: int) -> void:
 func _physics_process(delta: float) -> void:
 	if not _is_local:
 		return
-	
+
+	# Slow debuff tick
+	if _slow_timer > 0.0:
+		_slow_timer -= delta
+		if _slow_timer <= 0.0:
+			_slow_timer = 0.0
+			_slow_mult = 1.0
+			if _slow_trail != null and is_instance_valid(_slow_trail):
+				_slow_trail.emitting = false
+
 	# Camera shake
 	if camera_shake_time > 0.0:
 		camera_shake_time -= delta
@@ -545,7 +604,7 @@ func _physics_process(delta: float) -> void:
 	_update_stamina_bar()
 
 	# Movement
-	var cur_speed: float = SPEED * player_speed_mult
+	var cur_speed: float = SPEED * player_speed_mult * _slow_mult
 	if _crouching:
 		cur_speed = CROUCH_SPEED
 	elif want_sprint and _stamina > 0.0 and not _stamina_exhausted:

@@ -48,6 +48,9 @@ var _pending_respawns: Dictionary = {}
 const FPSPlayerScene := preload("res://scenes/FPSPlayer.tscn")
 const MinionAI := preload("res://scripts/MinionAI.gd")
 const RoleSelectDialogScene := preload("res://scenes/RoleSelectDialog.tscn")
+const SupporterHUDScene := preload("res://scenes/SupporterHUD.tscn")
+
+var _supporter_hud: Node = null
 
 @onready var rts_camera:         Camera3D        = $RTSCamera
 @onready var vignette_rect:      ColorRect       = $HUD/VignetteRect
@@ -219,6 +222,11 @@ func _start_multiplayer_game() -> void:
 		ammo_label.visible = false
 		reload_prompt.visible = false
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+		# Spawn SupporterHUD toolbar
+		_supporter_hud = SupporterHUDScene.instantiate()
+		$HUD.add_child(_supporter_hud)
+		_supporter_hud.setup(player_start_team)
+		rts_camera.set_supporter_hud(_supporter_hud)
 
 	call_deferred("_spawn_weapon_pickups")
 	call_deferred("_setup_lane_data")
@@ -491,6 +499,11 @@ func _on_start_game() -> void:
 		vitals_panel.visible = false
 		ammo_label.visible = false
 		reload_prompt.visible = false
+		# Spawn SupporterHUD toolbar
+		_supporter_hud = SupporterHUDScene.instantiate()
+		$HUD.add_child(_supporter_hud)
+		_supporter_hud.setup(player_start_team)
+		rts_camera.set_supporter_hud(_supporter_hud)
 
 	loading_screen.set_status("Spawning towers & pickups...")
 	loading_screen.set_progress(92.0)

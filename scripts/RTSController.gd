@@ -6,10 +6,20 @@ const MIN_FOV := 30.0
 const MAX_FOV := 100.0
 
 const TOWER_MODEL_PATH := "res://assets/tower-defense-kit/Models/GLB format/tower-square-build-a.glb"
-const TOWER_RANGE := 30.0
-const RANGE_CIRCLE_SEGMENTS := 64
+const RANGE_CIRCLE_SEGMENTS := 72
 const PLAYER_VISION_RADIUS := 35.0
 const MINION_VISION_RADIUS := 25.0
+
+# Range per tower type (0 = no circle)
+const TYPE_RANGES := {
+	"cannon":      30.0,
+	"mortar":      50.0,
+	"slow":        18.0,
+	"barrier":     0.0,
+	"weapon":      0.0,
+	"healthpack":  0.0,
+	"healstation": 4.0,
+}
 
 var build_system: Node = null
 # 0 = FIGHTER (view only), 1 = SUPPORTER (can build)
@@ -30,6 +40,15 @@ var _range_imesh: ImmediateMesh = null
 var _range_mat_valid: StandardMaterial3D = null
 var _range_mat_invalid: StandardMaterial3D = null
 
+var _los_mesh_inst: MeshInstance3D = null
+var _los_imesh: ImmediateMesh = null
+var _los_mat: StandardMaterial3D = null
+
+# Current placement selection — driven by SupporterHUD
+var _selected_type:    String = "cannon"
+var _selected_subtype: String = ""
+var _supporter_hud: Node = null
+
 func _ready() -> void:
 	build_system = get_node_or_null("/root/Main/BuildSystem")
 	_main = get_node_or_null("/root/Main")
@@ -42,12 +61,21 @@ func setup(team: int) -> void:
 	var base_z: float = 84.0 if team == 0 else -93.0
 	global_position = Vector3(0.0, 80.0, base_z)
 
+func set_supporter_hud(hud: Node) -> void:
+	_supporter_hud = hud
+	if hud != null:
+		hud.slot_changed.connect(_on_slot_changed)
+
+func _on_slot_changed(item_type: String, subtype: String) -> void:
+	_selected_type    = item_type
+	_selected_subtype = subtype
+	_destroy_ghost()  # Rebuild ghost for new type
+
 func _create_fog_overlay() -> void:
 	var fog_script := load("res://scripts/FogOverlay.gd")
 	_fog_overlay = MeshInstance3D.new()
 	_fog_overlay.set_script(fog_script)
 	_fog_overlay.name = "FogOverlay"
-	# Add to world so it sits in scene space, not camera space
 	call_deferred("_add_fog_to_world")
 
 # ── Ghost materials ──────────────────────────────────────────────────────────
@@ -76,6 +104,13 @@ func _build_ghost_materials() -> void:
 	_range_mat_invalid.no_depth_test = true
 	_range_mat_invalid.albedo_color = Color(1.0, 0.2, 0.2, 1.0)
 
+	_los_mat = StandardMaterial3D.new()
+	_los_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_los_mat.no_depth_test = true
+	_los_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_los_mat.vertex_color_use_as_albedo = true
+	_los_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+
 func _create_ghost() -> void:
 	if _ghost != null and is_instance_valid(_ghost):
 		return
@@ -87,15 +122,40 @@ func _create_ghost() -> void:
 	var root: Node3D = gltf.generate_scene(state)
 	if root == null:
 		return
+
 	_ghost = Node3D.new()
+	# Scale smaller for non-tower items
+	match _selected_type:
+		"weapon", "healthpack":
+			root.scale = Vector3(0.4, 0.4, 0.4)
+		"healstation":
+			root.scale = Vector3(0.6, 0.3, 0.6)
+		"barrier":
+			root.scale = Vector3(0.8, 1.4, 0.4)
+		_:
+			pass  # default scale
+
 	_ghost.add_child(root)
 
-	# Range circle
-	_range_imesh = ImmediateMesh.new()
-	_range_mesh_inst = MeshInstance3D.new()
-	_range_mesh_inst.mesh = _range_imesh
-	_range_mesh_inst.material_override = _range_mat_invalid
-	_ghost.add_child(_range_mesh_inst)
+	# Range circle — parented to scene root (NOT ghost) to avoid position double-offset
+	var range_val: float = TYPE_RANGES.get(_selected_type, 0.0)
+	if range_val > 0.0:
+		_range_imesh = ImmediateMesh.new()
+		_range_mesh_inst = MeshInstance3D.new()
+		_range_mesh_inst.mesh = _range_imesh
+		_range_mesh_inst.material_override = _range_mat_invalid
+		get_tree().root.get_child(0).add_child(_range_mesh_inst)
+
+		_los_imesh = ImmediateMesh.new()
+		_los_mesh_inst = MeshInstance3D.new()
+		_los_mesh_inst.mesh = _los_imesh
+		_los_mesh_inst.material_override = _los_mat
+		get_tree().root.get_child(0).add_child(_los_mesh_inst)
+	else:
+		_range_imesh = null
+		_range_mesh_inst = null
+		_los_imesh = null
+		_los_mesh_inst = null
 
 	get_tree().root.get_child(0).add_child(_ghost)
 	_apply_ghost_material(_ghost_mat_invalid)
@@ -104,14 +164,19 @@ func _destroy_ghost() -> void:
 	if _ghost != null and is_instance_valid(_ghost):
 		_ghost.queue_free()
 	_ghost = null
+	if _range_mesh_inst != null and is_instance_valid(_range_mesh_inst):
+		_range_mesh_inst.queue_free()
 	_range_mesh_inst = null
 	_range_imesh = null
+	if _los_mesh_inst != null and is_instance_valid(_los_mesh_inst):
+		_los_mesh_inst.queue_free()
+	_los_mesh_inst = null
+	_los_imesh = null
 
 func _apply_ghost_material(mat: StandardMaterial3D) -> void:
 	if _ghost == null or not is_instance_valid(_ghost):
 		return
 	_set_material_recursive(_ghost, mat)
-	# Restore range circle mat separately — don't let recursive override it
 	if _range_mesh_inst != null and is_instance_valid(_range_mesh_inst):
 		_range_mesh_inst.material_override = _range_mat_valid if mat == _ghost_mat_valid else _range_mat_invalid
 
@@ -121,19 +186,132 @@ func _set_material_recursive(node: Node, mat: StandardMaterial3D) -> void:
 	for child in node.get_children():
 		_set_material_recursive(child, mat)
 
-func _draw_range_circle(_center: Vector3) -> void:
+func _draw_range_circle(center: Vector3) -> void:
 	if _range_imesh == null or not is_instance_valid(_range_imesh):
 		return
+	var range_val: float = TYPE_RANGES.get(_selected_type, 0.0)
+	if range_val <= 0.0:
+		return
+	# Position the mesh node at the ghost world position so vertices can be local-space
+	_range_mesh_inst.global_position = Vector3(center.x, center.y + 0.3, center.z)
 	_range_imesh.clear_surfaces()
 	_range_imesh.surface_begin(Mesh.PRIMITIVE_LINES)
 	for i in range(RANGE_CIRCLE_SEGMENTS):
 		var a0: float = (float(i)       / float(RANGE_CIRCLE_SEGMENTS)) * TAU
 		var a1: float = (float(i + 1)   / float(RANGE_CIRCLE_SEGMENTS)) * TAU
-		var p0 := Vector3(cos(a0) * TOWER_RANGE, 0.3, sin(a0) * TOWER_RANGE)
-		var p1 := Vector3(cos(a1) * TOWER_RANGE, 0.3, sin(a1) * TOWER_RANGE)
+		var p0 := Vector3(cos(a0) * range_val, 0.0, sin(a0) * range_val)
+		var p1 := Vector3(cos(a1) * range_val, 0.0, sin(a1) * range_val)
 		_range_imesh.surface_add_vertex(p0)
 		_range_imesh.surface_add_vertex(p1)
 	_range_imesh.surface_end()
+
+func _draw_los_fan(center: Vector3) -> void:
+	if _los_imesh == null or not is_instance_valid(_los_imesh):
+		return
+	var range_val: float = TYPE_RANGES.get(_selected_type, 0.0)
+	if range_val <= 0.0:
+		return
+
+	var origin: Vector3 = center + Vector3(0.0, 1.5, 0.0)
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+
+	# Anchor mesh node at center so triangle vertices are local-space
+	_los_mesh_inst.global_position = Vector3(center.x, center.y + 0.25, center.z)
+
+	var col_clear := Color(0.1, 1.0, 0.3, 0.22)
+	var col_block := Color(1.0, 0.15, 0.05, 0.15)
+
+	_los_imesh.clear_surfaces()
+	_los_imesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	for i in range(RANGE_CIRCLE_SEGMENTS):
+		var a0: float = (float(i)     / float(RANGE_CIRCLE_SEGMENTS)) * TAU
+		var a1: float = (float(i + 1) / float(RANGE_CIRCLE_SEGMENTS)) * TAU
+		var d0 := Vector3(cos(a0), 0.0, sin(a0))
+		var d1 := Vector3(cos(a1), 0.0, sin(a1))
+
+		var p0_clear: bool = _los_ray(space, origin, d0, range_val, center)
+		var p1_clear: bool = _los_ray(space, origin, d1, range_val, center)
+
+		# Endpoint in local space (mesh is at center, y at ground level)
+		var p0: Vector3 = d0 * range_val
+		var p1: Vector3 = d1 * range_val
+
+		if not p0_clear:
+			# Find actual blocker position for this ray
+			var hit_pos: Vector3 = _los_ray_hit_pos(space, origin, d0, range_val, center)
+			var h: Vector3 = hit_pos - Vector3(center.x, center.y + 0.25, center.z)
+			p0 = Vector3(h.x, 0.0, h.z)
+
+		if not p1_clear:
+			var hit_pos: Vector3 = _los_ray_hit_pos(space, origin, d1, range_val, center)
+			var h: Vector3 = hit_pos - Vector3(center.x, center.y + 0.25, center.z)
+			p1 = Vector3(h.x, 0.0, h.z)
+
+		var col: Color = col_clear if (p0_clear and p1_clear) else col_block
+
+		# Triangle: origin, p0, p1
+		_los_imesh.surface_set_color(col)
+		_los_imesh.surface_add_vertex(Vector3.ZERO)
+		_los_imesh.surface_set_color(col)
+		_los_imesh.surface_add_vertex(p0)
+		_los_imesh.surface_set_color(col)
+		_los_imesh.surface_add_vertex(p1)
+
+	_los_imesh.surface_end()
+
+# Returns true if the ray in direction d is unobstructed (ignoring short trees and clearing-radius trees).
+func _los_ray(space: PhysicsDirectSpaceState3D, origin: Vector3, d: Vector3, range_val: float, ghost_center: Vector3) -> bool:
+	var excluded: Array[RID] = []
+	for _attempt in range(4):
+		var target: Vector3 = origin + d * range_val
+		var query := PhysicsRayQueryParameters3D.create(origin, target)
+		query.collision_mask = 0b11
+		query.exclude = excluded
+		var res: Dictionary = space.intersect_ray(query)
+		if res.is_empty():
+			return true
+		var body: Object = res.collider
+		if _los_tree_passthrough(body, ghost_center):
+			excluded.append(body.get_rid())
+			continue
+		return false
+	return true
+
+# Returns the world-space hit position of the first real blocker along this ray.
+func _los_ray_hit_pos(space: PhysicsDirectSpaceState3D, origin: Vector3, d: Vector3, range_val: float, ghost_center: Vector3) -> Vector3:
+	var excluded: Array[RID] = []
+	for _attempt in range(4):
+		var target: Vector3 = origin + d * range_val
+		var query := PhysicsRayQueryParameters3D.create(origin, target)
+		query.collision_mask = 0b11
+		query.exclude = excluded
+		var res: Dictionary = space.intersect_ray(query)
+		if res.is_empty():
+			return origin + d * range_val
+		var body: Object = res.collider
+		if _los_tree_passthrough(body, ghost_center):
+			excluded.append(body.get_rid())
+			continue
+		return res.position
+	return origin + d * range_val
+
+# Returns true if this hit body should be ignored for LOS purposes:
+#   - tree within the tower's clearing radius (will be removed on placement)
+#   - tree shorter than the tower barrel height (1.5 u)
+func _los_tree_passthrough(body: Object, ghost_center: Vector3) -> bool:
+	if body == null or not body.has_meta("tree_trunk_height"):
+		return false
+	# Within clearing radius — will be removed when tower is placed
+	var xz_dist: float = Vector2(body.global_position.x - ghost_center.x,
+								 body.global_position.z - ghost_center.z).length()
+	if xz_dist <= 5.0:
+		return true
+	# Too short to block the tower barrel
+	var trunk_h: float = body.get_meta("tree_trunk_height")
+	if trunk_h <= 1.5:
+		return true
+	return false
 
 # ── Process ──────────────────────────────────────────────────────────────────
 
@@ -142,6 +320,15 @@ func _process(delta: float) -> void:
 		_destroy_ghost()
 		_restore_fog()
 		return
+
+	# Sync selection from SupporterHUD each frame
+	if _supporter_hud != null and is_instance_valid(_supporter_hud):
+		var new_type:    String = _supporter_hud.selected_type
+		var new_subtype: String = _supporter_hud.selected_subtype
+		if new_type != _selected_type or new_subtype != _selected_subtype:
+			_selected_type    = new_type
+			_selected_subtype = new_subtype
+			_destroy_ghost()
 
 	# Fighters get view-only RTS — no placement ghost
 	if player_role == 1:
@@ -155,22 +342,16 @@ func _process(delta: float) -> void:
 
 	# WASD pan
 	var dir := Vector2.ZERO
-	if Input.is_action_pressed("rts_pan_up"):
-		dir.y -= 1.0
-	if Input.is_action_pressed("rts_pan_down"):
-		dir.y += 1.0
-	if Input.is_action_pressed("rts_pan_left"):
-		dir.x -= 1.0
-	if Input.is_action_pressed("rts_pan_right"):
-		dir.x += 1.0
+	if Input.is_action_pressed("rts_pan_up"):    dir.y -= 1.0
+	if Input.is_action_pressed("rts_pan_down"):  dir.y += 1.0
+	if Input.is_action_pressed("rts_pan_left"):  dir.x -= 1.0
+	if Input.is_action_pressed("rts_pan_right"): dir.x += 1.0
 	if dir != Vector2.ZERO:
 		dir = dir.normalized()
 		global_position.x += dir.x * PAN_SPEED * delta
 		global_position.z += dir.y * PAN_SPEED * delta
 
-	# Ghost placement preview
 	_update_ghost()
-	# Fog of war
 	_update_fog()
 
 func _update_ghost() -> void:
@@ -180,17 +361,25 @@ func _update_ghost() -> void:
 	var mouse_pos: Vector2 = get_viewport().get_mouse_position()
 	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	var from: Vector3 = project_ray_origin(mouse_pos)
-	var dir: Vector3 = project_ray_normal(mouse_pos)
-	var to: Vector3 = from + dir * 500.0
+	var dir: Vector3  = project_ray_normal(mouse_pos)
+	var to: Vector3   = from + dir * 500.0
 	var query := PhysicsRayQueryParameters3D.create(from, to)
 	query.collision_mask = 1
 	var result: Dictionary = space.intersect_ray(query)
 
 	if result.is_empty():
 		_ghost.visible = false
+		if _range_mesh_inst != null and is_instance_valid(_range_mesh_inst):
+			_range_mesh_inst.visible = false
+		if _los_mesh_inst != null and is_instance_valid(_los_mesh_inst):
+			_los_mesh_inst.visible = false
 		return
 
 	_ghost.visible = true
+	if _range_mesh_inst != null and is_instance_valid(_range_mesh_inst):
+		_range_mesh_inst.visible = true
+	if _los_mesh_inst != null and is_instance_valid(_los_mesh_inst):
+		_los_mesh_inst.visible = true
 	var snapped := Vector3(
 		snappedf(result.position.x, 2.0),
 		result.position.y,
@@ -199,40 +388,38 @@ func _update_ghost() -> void:
 	_ghost.global_position = snapped
 	_ghost_world_pos = snapped
 
-	# Slope check
 	var normal: Vector3 = result.normal
 	var on_flat_enough: bool = normal.dot(Vector3.UP) >= build_system.SLOPE_THRESHOLD
 
-	var valid: bool = on_flat_enough and build_system.can_place(snapped, _player_team)
+	var valid: bool = on_flat_enough and build_system.can_place_item(snapped, _player_team, _selected_type)
 	if valid != _ghost_valid:
 		_ghost_valid = valid
 		_apply_ghost_material(_ghost_mat_valid if valid else _ghost_mat_invalid)
 
 	_draw_range_circle(snapped)
+	_draw_los_fan(snapped)
 
 # ── Input ────────────────────────────────────────────────────────────────────
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not current:
 		return
-
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if player_role == 1:
-			_try_place_tower(event.position)
+			_try_place_item(event.position)
 
-func _try_place_tower(_screen_pos: Vector2) -> void:
+func _try_place_item(_screen_pos: Vector2) -> void:
 	if build_system == null or not _ghost_valid:
 		return
 	if multiplayer.has_multiplayer_peer():
-		# Multiplayer: route through server for validation
 		if multiplayer.is_server():
-			if build_system.place_tower(_ghost_world_pos, _player_team):
-				LobbyManager.spawn_tower_visuals.rpc(_ghost_world_pos, _player_team)
+			if build_system.place_item(_ghost_world_pos, _player_team, _selected_type, _selected_subtype):
+				LobbyManager.spawn_item_visuals.rpc(_ghost_world_pos, _player_team, _selected_type, _selected_subtype)
 				LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
 		else:
-			LobbyManager.request_place_tower.rpc_id(1, _ghost_world_pos, _player_team)
+			LobbyManager.request_place_item.rpc_id(1, _ghost_world_pos, _player_team, _selected_type, _selected_subtype)
 	else:
-		build_system.place_tower(_ghost_world_pos, _player_team)
+		build_system.place_item(_ghost_world_pos, _player_team, _selected_type, _selected_subtype)
 
 # ── Fog of war ───────────────────────────────────────────────────────────────
 
@@ -247,7 +434,6 @@ func _restore_fog() -> void:
 			node.visible = true
 
 func _update_fog() -> void:
-	# Collect vision sources on the player's team
 	var sources: Array[Vector3] = []
 
 	var main: Node = _main
@@ -274,14 +460,12 @@ func _update_fog() -> void:
 			sources.append(tower.global_position)
 			tower_positions.append(tower.global_position)
 
-	# Update overlay mesh
 	if _fog_overlay and is_instance_valid(_fog_overlay):
 		_fog_overlay.visible = true
 		_fog_overlay.call("update_sources", player_pos, PLAYER_VISION_RADIUS,
 				minion_positions, MINION_VISION_RADIUS,
-				tower_positions, TOWER_RANGE)
+				tower_positions, 30.0)
 
-	# Apply visibility to enemy nodes
 	_apply_fog_to_group("towers")
 	_apply_fog_to_group("minions")
 
@@ -300,11 +484,9 @@ func _is_visible_to_sources(world_pos: Vector3) -> bool:
 	if _main and _main.get("fps_player") != null and is_instance_valid(_main.fps_player):
 		player_pos = _main.fps_player.global_position
 
-	# Player vision
 	if world_pos.distance_squared_to(player_pos) <= PLAYER_VISION_RADIUS * PLAYER_VISION_RADIUS:
 		return true
 
-	# Friendly minion vision
 	for minion in get_tree().get_nodes_in_group("minions"):
 		if not is_instance_valid(minion):
 			continue
@@ -313,13 +495,13 @@ func _is_visible_to_sources(world_pos: Vector3) -> bool:
 		if world_pos.distance_squared_to(minion.global_position) <= MINION_VISION_RADIUS * MINION_VISION_RADIUS:
 			return true
 
-	# Friendly tower vision
 	for tower in get_tree().get_nodes_in_group("towers"):
 		if not is_instance_valid(tower):
 			continue
 		if tower.get("team") != _player_team:
 			continue
-		if world_pos.distance_squared_to(tower.global_position) <= TOWER_RANGE * TOWER_RANGE:
+		var tr: float = TYPE_RANGES.get("cannon", 30.0)  # use cannon as default vision range
+		if world_pos.distance_squared_to(tower.global_position) <= tr * tr:
 			return true
 
 	return false

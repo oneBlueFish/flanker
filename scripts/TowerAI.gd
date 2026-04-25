@@ -81,10 +81,30 @@ func _find_target() -> Node3D:
 		if body_team == team:
 			continue
 		var d := global_position.distance_to(body.global_position)
-		if d < best_dist:
+		if d < best_dist and _has_line_of_sight(body):
 			best_dist = d
 			best = body
 	return best
+
+func _has_line_of_sight(target: Node3D) -> bool:
+	var from: Vector3 = global_position + Vector3(0.0, 2.0, 0.0)
+	var to: Vector3 = target.global_position + Vector3(0.0, 0.8, 0.0)
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var excluded: Array[RID] = [get_rid(), target.get_rid()]
+	for _attempt in range(4):
+		var query := PhysicsRayQueryParameters3D.create(from, to)
+		query.exclude = excluded
+		query.collision_mask = 0b11
+		var result: Dictionary = space.intersect_ray(query)
+		if result.is_empty():
+			return true
+		var body: Object = result.collider
+		if body != null and body.has_meta("tree_trunk_height"):
+			# Short trees (below barrel) and any tree — ignore, they're foliage, not walls
+			excluded.append(body.get_rid())
+			continue
+		return false
+	return true
 
 func _shoot(target: Node3D) -> void:
 	var spawn_pos: Vector3 = global_position + Vector3(0.0, 2.0, 0.0)

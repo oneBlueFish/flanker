@@ -31,6 +31,15 @@ func _add_glow_light() -> void:
 
 func _on_body_entered(body: Node3D) -> void:
 	if body.has_method("pick_up_weapon") and weapon_data != null:
+		# Supporter-placed drops sync despawn to all peers
+		if get_meta("supporter_placed", false):
+			body.pick_up_weapon(weapon_data)
+			if multiplayer.has_multiplayer_peer():
+				LobbyManager.notify_drop_picked_up.rpc_id(1, name)
+			else:
+				queue_free()
+			return
+		# Natural pickup path — emit signal for Main.gd respawn timer, then free
 		weapon_picked_up.emit(global_position)
 		body.pick_up_weapon(weapon_data)
 		if has_node("AudioStreamPlayer3D"):

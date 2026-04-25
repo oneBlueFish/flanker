@@ -147,6 +147,7 @@ func _add_tree_collision(world_pos: Vector3, scale: float) -> void:
 	collision.position = world_pos
 	collision.collision_layer = 2
 	collision.collision_mask = 1
+	collision.set_meta("tree_trunk_height", trunk_height)
 
 	add_child(collision)
 

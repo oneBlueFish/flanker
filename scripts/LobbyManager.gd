@@ -408,31 +408,61 @@ func sync_minion_states(ids: PackedInt32Array, positions: PackedVector3Array,
 		if minion != null and minion.has_method("apply_puppet_state"):
 			minion.apply_puppet_state(positions[i], rotations[i], healths[i])
 
-# ── Tower sync ────────────────────────────────────────────────────────────────
+# ── Tower / item sync ────────────────────────────────────────────────────────
 
 @rpc("any_peer", "reliable")
-func request_place_tower(world_pos: Vector3, team: int) -> void:
+func request_place_item(world_pos: Vector3, team: int, item_type: String, subtype: String) -> void:
 	if not multiplayer.is_server():
 		return
 	var id: int = _sender_id()
 	var info: Dictionary = players.get(id, {})
 	if info.get("team", -1) != team:
 		return
-	# Only Supporters (role == 1) may place towers
+	# Only Supporters (role == 1) may place items
 	if info.get("role", 0) != 1:
 		return
 	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
 	if build_sys == null:
 		return
-	if build_sys.place_tower(world_pos, team):
-		spawn_tower_visuals.rpc(world_pos, team)
+	if build_sys.place_item(world_pos, team, item_type, subtype):
+		spawn_item_visuals.rpc(world_pos, team, item_type, subtype)
 		sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
 
+# Legacy alias — still works for any old callers
+@rpc("any_peer", "reliable")
+func request_place_tower(world_pos: Vector3, team: int) -> void:
+	request_place_item(world_pos, team, "cannon", "")
+
+@rpc("authority", "call_remote", "reliable")
+func spawn_item_visuals(world_pos: Vector3, team: int, item_type: String, subtype: String) -> void:
+	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
+	if build_sys != null and build_sys.has_method("spawn_item_local"):
+		build_sys.spawn_item_local(world_pos, team, item_type, subtype)
+
+# Legacy alias
 @rpc("authority", "call_remote", "reliable")
 func spawn_tower_visuals(world_pos: Vector3, team: int) -> void:
-	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
-	if build_sys != null and build_sys.has_method("spawn_tower_local"):
-		build_sys.spawn_tower_local(world_pos, team)
+	spawn_item_visuals(world_pos, team, "cannon", "")
+
+# ── Supporter drop despawn sync ───────────────────────────────────────────────
+
+# Any client calls this when a supporter-placed drop is picked up.
+# Server validates and broadcasts despawn to all peers (including itself).
+@rpc("any_peer", "reliable")
+func notify_drop_picked_up(node_name: String) -> void:
+	if not multiplayer.is_server():
+		return
+	despawn_drop.rpc(node_name)
+
+# Executed on every peer (call_local) — removes the named drop node from Main.
+@rpc("authority", "call_local", "reliable")
+func despawn_drop(node_name: String) -> void:
+	var main: Node = get_tree().root.get_node_or_null("Main")
+	if main == null:
+		return
+	var node: Node = main.get_node_or_null(node_name)
+	if node != null:
+		node.queue_free()
 
 # ── TeamData sync ─────────────────────────────────────────────────────────────
 

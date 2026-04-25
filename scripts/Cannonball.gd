@@ -93,37 +93,147 @@ func _should_damage(hit: Object) -> bool:
 	return true
 
 func _spawn_impact(pos: Vector3) -> void:
-	var particles := GPUParticles3D.new()
-	var pmat := ParticleProcessMaterial.new()
-	pmat.direction = Vector3.UP
-	pmat.spread = 60.0
-	pmat.initial_velocity_min = 4.0
-	pmat.initial_velocity_max = 10.0
-	pmat.gravity = Vector3(0, -12, 0)
-	pmat.scale_min = 0.2
-	pmat.scale_max = 0.5
+	var root: Node = get_tree().root
 
-	var mesh := QuadMesh.new()
-	mesh.size = Vector2(0.25, 0.25)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.vertex_color_use_as_albedo = true
-	mat.no_depth_test = true
-	mat.albedo_color = Color(1.0, 0.45, 0.05, 1.0)
-	mat.emission_enabled = true
-	mat.emission = Color(1.0, 0.3, 0.0)
-	mat.emission_energy_multiplier = 3.0
-	mesh.material = mat
+	# ── Layer 1: Fireball core ────────────────────────────────────────────────
+	var p1 := GPUParticles3D.new()
+	var pm1 := ParticleProcessMaterial.new()
+	pm1.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm1.emission_sphere_radius = 0.3
+	pm1.direction = Vector3.UP
+	pm1.spread = 180.0
+	pm1.initial_velocity_min = 8.0
+	pm1.initial_velocity_max = 18.0
+	pm1.gravity = Vector3(0.0, -6.0, 0.0)
+	pm1.scale_min = 0.35
+	pm1.scale_max = 0.7
+	var m1 := QuadMesh.new()
+	m1.size = Vector2(0.5, 0.5)
+	var mat1 := StandardMaterial3D.new()
+	mat1.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat1.albedo_color = Color(1.0, 0.92, 0.5, 1.0)
+	mat1.emission_enabled = true
+	mat1.emission = Color(1.0, 0.55, 0.05)
+	mat1.emission_energy_multiplier = 5.0
+	mat1.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m1.material = mat1
+	p1.process_material = pm1
+	p1.draw_pass_1 = m1
+	p1.amount = 30
+	p1.lifetime = 0.35
+	p1.one_shot = true
+	p1.explosiveness = 1.0
+	root.add_child(p1)
+	p1.global_position = pos
+	p1.emitting = true
+	p1.restart()
+	get_tree().create_timer(p1.lifetime + 0.1).timeout.connect(p1.queue_free)
 
-	particles.process_material = pmat
-	particles.draw_pass_1 = mesh
-	particles.amount = 40
-	particles.lifetime = 0.8
-	particles.one_shot = true
-	particles.explosiveness = 0.95
+	# ── Layer 2: Black smoke column ───────────────────────────────────────────
+	var p2 := GPUParticles3D.new()
+	var pm2 := ParticleProcessMaterial.new()
+	pm2.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm2.emission_sphere_radius = 0.5
+	pm2.direction = Vector3.UP
+	pm2.spread = 25.0
+	pm2.initial_velocity_min = 2.0
+	pm2.initial_velocity_max = 5.0
+	pm2.gravity = Vector3(0.0, 0.4, 0.0)
+	pm2.scale_min = 0.6
+	pm2.scale_max = 1.1
+	var m2 := QuadMesh.new()
+	m2.size = Vector2(0.8, 0.8)
+	var mat2 := StandardMaterial3D.new()
+	mat2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat2.albedo_color = Color(0.1, 0.09, 0.08, 0.88)
+	mat2.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat2.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m2.material = mat2
+	p2.process_material = pm2
+	p2.draw_pass_1 = m2
+	p2.amount = 20
+	p2.lifetime = 1.5
+	p2.one_shot = true
+	p2.explosiveness = 0.7
+	root.add_child(p2)
+	p2.global_position = pos + Vector3(0.0, 0.3, 0.0)
+	p2.emitting = true
+	p2.restart()
+	get_tree().create_timer(p2.lifetime + 0.1).timeout.connect(p2.queue_free)
 
-	get_tree().root.add_child(particles)
-	particles.global_position = pos
-	particles.emitting = true
-	particles.restart()
-	particles.call_deferred("free")
+	# ── Layer 3: Shrapnel sparks ──────────────────────────────────────────────
+	var p3 := GPUParticles3D.new()
+	var pm3 := ParticleProcessMaterial.new()
+	pm3.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm3.emission_sphere_radius = 0.1
+	pm3.direction = Vector3.UP
+	pm3.spread = 90.0
+	pm3.initial_velocity_min = 10.0
+	pm3.initial_velocity_max = 22.0
+	pm3.gravity = Vector3(0.0, -18.0, 0.0)
+	pm3.scale_min = 0.05
+	pm3.scale_max = 0.15
+	var m3 := QuadMesh.new()
+	m3.size = Vector2(0.12, 0.12)
+	var mat3 := StandardMaterial3D.new()
+	mat3.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat3.albedo_color = Color(1.0, 0.8, 0.1, 1.0)
+	mat3.emission_enabled = true
+	mat3.emission = Color(1.0, 0.6, 0.0)
+	mat3.emission_energy_multiplier = 6.0
+	m3.material = mat3
+	p3.process_material = pm3
+	p3.draw_pass_1 = m3
+	p3.amount = 25
+	p3.lifetime = 0.6
+	p3.one_shot = true
+	p3.explosiveness = 1.0
+	root.add_child(p3)
+	p3.global_position = pos
+	p3.emitting = true
+	p3.restart()
+	get_tree().create_timer(p3.lifetime + 0.1).timeout.connect(p3.queue_free)
+
+	# ── Layer 4: Ground dust ring ─────────────────────────────────────────────
+	var p4 := GPUParticles3D.new()
+	var pm4 := ParticleProcessMaterial.new()
+	pm4.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm4.emission_sphere_radius = 0.2
+	pm4.direction = Vector3.UP
+	pm4.spread = 180.0
+	pm4.initial_velocity_min = 3.0
+	pm4.initial_velocity_max = 7.0
+	pm4.gravity = Vector3(0.0, -20.0, 0.0)
+	pm4.scale_min = 0.25
+	pm4.scale_max = 0.55
+	var m4 := QuadMesh.new()
+	m4.size = Vector2(0.4, 0.4)
+	var mat4 := StandardMaterial3D.new()
+	mat4.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat4.albedo_color = Color(0.58, 0.45, 0.3, 0.75)
+	mat4.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat4.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m4.material = mat4
+	p4.process_material = pm4
+	p4.draw_pass_1 = m4
+	p4.amount = 18
+	p4.lifetime = 0.9
+	p4.one_shot = true
+	p4.explosiveness = 0.95
+	root.add_child(p4)
+	p4.global_position = pos
+	p4.emitting = true
+	p4.restart()
+	get_tree().create_timer(p4.lifetime + 0.1).timeout.connect(p4.queue_free)
+
+	# ── Flash light ───────────────────────────────────────────────────────────
+	var flash := OmniLight3D.new()
+	flash.light_color = Color(1.0, 0.6, 0.15)
+	flash.light_energy = 8.0
+	flash.omni_range = 6.0
+	flash.shadow_enabled = false
+	root.add_child(flash)
+	flash.global_position = pos + Vector3(0.0, 0.5, 0.0)
+	var tw: Tween = flash.create_tween()
+	tw.tween_property(flash, "light_energy", 0.0, 0.4)
+	tw.tween_callback(flash.queue_free)

@@ -24,6 +24,10 @@ var _dead           := false
 var _time           := 0.0
 var _strafe_phase   := 0.0
 
+# Slow debuff
+var _slow_timer: float = 0.0
+var _slow_mult:  float = 1.0
+
 # Multiplayer: server drives AI, clients are puppets
 var is_puppet: bool = false
 var _physics_process_disabled: bool = false
@@ -183,6 +187,13 @@ func _physics_process(delta: float) -> void:
 
 	_time += delta
 
+	# Slow debuff tick
+	if _slow_timer > 0.0:
+		_slow_timer -= delta
+		if _slow_timer <= 0.0:
+			_slow_timer = 0.0
+			_slow_mult = 1.0
+
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
 
@@ -262,8 +273,8 @@ func _approach_with_strafe(target: Node3D, _delta: float) -> void:
 	var right := Vector3(-forward.z, 0.0, forward.x)
 	var strafe := sin(_time * 2.2 + _strafe_phase)
 	var move_dir := (forward + right * strafe * 0.55).normalized()
-	velocity.x = move_dir.x * speed
-	velocity.z = move_dir.z * speed
+	velocity.x = move_dir.x * speed * _slow_mult
+	velocity.z = move_dir.z * speed * _slow_mult
 	_face(target.global_position)
 
 func _apply_separation() -> void:
@@ -290,8 +301,8 @@ func _march(_delta: float) -> void:
 			current_waypoint += 1
 			return
 		var horiz: Vector3 = dir.normalized()
-		velocity.x = horiz.x * speed
-		velocity.z = horiz.z * speed
+		velocity.x = horiz.x * speed * _slow_mult
+		velocity.z = horiz.z * speed * _slow_mult
 		_face(dest)
 	elif _target == null:
 		# Waypoints exhausted, continue to enemy base using cached ref
@@ -300,8 +311,8 @@ func _march(_delta: float) -> void:
 			to_base.y = 0.0
 			if to_base.length_squared() > 4.0:
 				var dir: Vector3 = to_base.normalized()
-				velocity.x = dir.x * speed
-				velocity.z = dir.z * speed
+				velocity.x = dir.x * speed * _slow_mult
+				velocity.z = dir.z * speed * _slow_mult
 				_face(to_base)
 			else:
 				velocity.x = 0.0
@@ -409,6 +420,10 @@ func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void
 		TeamData.add_points(awarding_team, pts)
 		if multiplayer.is_server():
 			LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
+
+func apply_slow(duration: float, mult: float) -> void:
+	_slow_timer = max(_slow_timer, duration)
+	_slow_mult = min(_slow_mult, mult)
 
 func _die() -> void:
 	if _dead:
