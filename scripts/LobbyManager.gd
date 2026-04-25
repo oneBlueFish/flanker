@@ -9,6 +9,7 @@ var host_id: int = 1
 var game_started := false
 var supporter_claimed: Dictionary = { 0: false, 1: false }
 var player_death_counts: Dictionary = {}
+var ai_supporter_teams: Array = []  # teams where an AI Supporter was spawned
 
 var _dirty := false
 
@@ -141,6 +142,7 @@ func start_game(path: String, map_seed: int = 0, time_seed: int = -1) -> void:
 	notify_game_seed.rpc(s, time_seed)  # call_local — sets GameSync on server too
 	supporter_claimed = { 0: false, 1: false }
 	player_death_counts.clear()
+	ai_supporter_teams.clear()
 	game_started = true
 	game_start_requested.emit()
 	load_game_scene.rpc(path)

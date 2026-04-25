@@ -49,6 +49,7 @@ const FPSPlayerScene := preload("res://scenes/FPSPlayer.tscn")
 const MinionAI := preload("res://scripts/MinionAI.gd")
 const RoleSelectDialogScene := preload("res://scenes/RoleSelectDialog.tscn")
 const SupporterHUDScene := preload("res://scenes/SupporterHUD.tscn")
+const AISupporterControllerScript := preload("res://scripts/AISupporterController.gd")
 
 var _supporter_hud: Node = null
 
@@ -207,6 +208,10 @@ func _start_multiplayer_game() -> void:
 	rts_camera.player_role = player_role
 	_death_count = 0
 	game_state = GameState.PLAYING
+
+	# Spawn AI Supporters for any team without a human Supporter (server only)
+	if multiplayer.is_server():
+		_spawn_ai_supporters_multiplayer()
 
 	if player_role == Role.FIGHTER:
 		_spawn_local_player()
@@ -505,6 +510,9 @@ func _on_start_game() -> void:
 		_supporter_hud.setup(player_start_team)
 		rts_camera.set_supporter_hud(_supporter_hud)
 
+	# Spawn AI Supporters for any uncovered team (singleplayer — always server)
+	_spawn_ai_supporters_singleplayer(player_role, player_start_team)
+
 	loading_screen.set_status("Spawning towers & pickups...")
 	loading_screen.set_progress(92.0)
 	await get_tree().process_frame
@@ -734,3 +742,33 @@ func _place_pickup(pos: Vector3, pickup_sound: AudioStream) -> void:
 	add_child(pickup)
 	pickup.add_to_group("weapon_pickups")
 	(pickup as Node).connect("weapon_picked_up", _on_weapon_pickup)
+
+# ── AI Supporter spawning ─────────────────────────────────────────────────────
+
+# Singleplayer: always server. Spawn AI for enemy team, and for player's team
+# if the player chose Fighter.
+func _spawn_ai_supporters_singleplayer(p_role: Role, p_team: int) -> void:
+	var enemy_team: int = 1 - p_team
+	# Always give enemy an AI Supporter
+	_spawn_ai_supporter(enemy_team)
+	# Player's team gets AI Supporter only if player is Fighter
+	if p_role == Role.FIGHTER:
+		_spawn_ai_supporter(p_team)
+
+# Multiplayer: called on server only. Check LobbyManager.supporter_claimed.
+func _spawn_ai_supporters_multiplayer() -> void:
+	for t in [0, 1]:
+		if not LobbyManager.supporter_claimed.get(t, false):
+			_spawn_ai_supporter(t)
+
+func _spawn_ai_supporter(t: int) -> void:
+	# Avoid duplicates
+	for child in get_children():
+		if child is Node and child.get_script() == AISupporterControllerScript \
+				and child.get("team") == t:
+			return
+	var ai: Node = AISupporterControllerScript.new()
+	ai.name = "AISupporterTeam%d" % t
+	ai.set("team", t)
+	LobbyManager.ai_supporter_teams.append(t)
+	add_child(ai)
