@@ -77,7 +77,7 @@ func spawn_tower_local(world_pos: Vector3, team: int) -> void:
 
 	var tree_placer: Node = main.get_node_or_null("World/TreePlacer")
 	if tree_placer and tree_placer.has_method("clear_trees_at"):
-		tree_placer.clear_trees_at(world_pos, 14.0)
+		tree_placer.clear_trees_at(world_pos, 7.0)
 
 func get_tower_cost() -> int:
 	return TOWER_COST

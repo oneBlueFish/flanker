@@ -143,13 +143,23 @@ func start_game(path: String) -> void:
 	load_game_scene.rpc(path)
 	get_tree().change_scene_to_file(path)
 
+const RESPAWN_CAP: float = 60.0
+
 func increment_death_count(peer_id: int) -> int:
 	player_death_counts[peer_id] = player_death_counts.get(peer_id, 0) + 1
-	return player_death_counts[peer_id]
+	var new_count: int = player_death_counts[peer_id]
+	# Broadcast updated death count to all clients so their local respawn timer is accurate
+	sync_death_count.rpc(peer_id, new_count)
+	return new_count
 
 func get_respawn_time(peer_id: int) -> float:
 	var deaths: int = player_death_counts.get(peer_id, 0)
-	return RESPAWN_BASE + (deaths * RESPAWN_INCREMENT)
+	var t: float = RESPAWN_BASE + (deaths * RESPAWN_INCREMENT)
+	return min(t, RESPAWN_CAP)
+
+@rpc("authority", "reliable")
+func sync_death_count(peer_id: int, count: int) -> void:
+	player_death_counts[peer_id] = count
 
 @rpc("any_peer", "reliable")
 func request_start_game() -> void:

@@ -2,7 +2,7 @@ extends StaticBody3D
 
 const GRID_SIZE       := 200
 const GRID_STEPS      := 200
-const MAX_HEIGHT      := 8.0
+const MAX_HEIGHT      := 4.0
 const BASE_FLAT_Z     := 76.0
 const BASE_BLEND_Z    := 70.0
 const LANE_FLAT_DIST  := 3.0

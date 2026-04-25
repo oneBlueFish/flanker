@@ -43,7 +43,8 @@ func damage_player(peer_id: int, amount: float, source_team: int) -> float:
 	if hp <= 0.0:
 		player_died.emit(peer_id)
 		player_dead[peer_id] = true
-		var respawn_time: float = LobbyManager.increment_death_count(peer_id) * LobbyManager.RESPAWN_INCREMENT + LobbyManager.RESPAWN_BASE
+		var deaths: int = LobbyManager.increment_death_count(peer_id)
+		var respawn_time: float = min(deaths * LobbyManager.RESPAWN_INCREMENT + LobbyManager.RESPAWN_BASE, LobbyManager.RESPAWN_CAP)
 		respawn_countdown[peer_id] = respawn_time
 	
 	return hp

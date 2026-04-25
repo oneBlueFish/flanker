@@ -584,7 +584,7 @@ func _on_player_died() -> void:
 	var respawn_time: float
 	if _is_singleplayer:
 		_death_count += 1
-		respawn_time = RESPAWN_BASE + (_death_count * RESPAWN_INCREMENT)
+		respawn_time = min(RESPAWN_BASE + (_death_count * RESPAWN_INCREMENT), 60.0)
 	else:
 		var my_id := multiplayer.get_unique_id()
 		respawn_time = LobbyManager.get_respawn_time(my_id)

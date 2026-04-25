@@ -624,6 +624,17 @@ func _local_raycast_hit(origin: Vector3, dir: Vector3) -> Dictionary:
 			var ghost_peer: int = check.get_meta("ghost_peer_id") as int
 			if ghost_peer > 0 and ghost_peer != _peer_id:
 				return {"peer_id": ghost_peer}
+		# Host player body — FPSPlayer_<id> CharacterBody3D has no ghost node on clients.
+		# Detect it by node name and presence of player_team property.
+		if check.name.begins_with("FPSPlayer_") and check.get("player_team") != null:
+			var id_str: String = check.name.substr(10)
+			if id_str.is_valid_int():
+				var host_peer: int = id_str.to_int()
+				if host_peer != _peer_id:
+					var target_team: int = check.get("player_team") as int
+					if target_team != player_team:
+						return {"peer_id": host_peer}
+					return {}
 		# Minion puppet — identified by _minion_id
 		if check.get("_minion_id") != null and check.get("is_puppet") == true:
 			var mid: int = check.get("_minion_id") as int
