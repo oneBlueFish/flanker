@@ -1,18 +1,27 @@
 [gd_scene format=3 uid="uid://healthbar"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.04, 0.05, 0.06, 0.90)
+border_width_left = 2
+border_color = Color(0.85, 0.32, 0.05, 0.7)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fg"]
+bg_color = Color(0.85, 0.15, 0.15, 1)
+
 [node name="HealthBar" type="Control"]
-custom_minimum_size = Vector2(150, 20)
-size = Vector2(150, 20)
+custom_minimum_size = Vector2(150, 10)
+size = Vector2(150, 10)
 mouse_filter = 2
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="PanelContainer" parent="."]
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0.15, 0.15, 0.15, 1)
 mouse_filter = 2
+theme_type_variation = &""
+theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
 
 [node name="Foreground" type="ColorRect" parent="."]
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(1, 0.15, 0.15, 1)
+color = Color(0.85, 0.15, 0.15, 1)
 mouse_filter = 2

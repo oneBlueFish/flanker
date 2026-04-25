@@ -13,6 +13,8 @@ const PLAYER_VISION_RADIUS := 35.0
 const MINION_VISION_RADIUS := 25.0
 
 var build_system: Node = null
+# 0 = FIGHTER (view only), 1 = SUPPORTER (can build)
+var player_role: int = 0
 
 var _ghost: Node3D = null
 var _ghost_mat_valid: StandardMaterial3D = null
@@ -140,7 +142,9 @@ func _process(delta: float) -> void:
 		_restore_fog()
 		return
 
-	_create_ghost()
+	# Fighters get view-only RTS — no placement ghost
+	if player_role == 1:
+		_create_ghost()
 
 	# Zoom
 	if Input.is_action_just_pressed("rts_zoom_in"):
@@ -212,7 +216,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		_try_place_tower(event.position)
+		if player_role == 1:
+			_try_place_tower(event.position)
 
 func _try_place_tower(_screen_pos: Vector2) -> void:
 	if build_system == null or not _ghost_valid:

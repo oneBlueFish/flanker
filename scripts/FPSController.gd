@@ -93,11 +93,20 @@ var _slot_ammo: Array = [[0, 0], [0, 0]]
 # Set by Main.gd after scene ready
 var reload_bar: ProgressBar  = null
 var health_bar: ProgressBar  = null
-var weapon_label: Label      = null
 var ammo_label: Label        = null
 var reload_prompt: Label     = null
 var stamina_bar: ProgressBar = null
 var points_label: Label    = null
+var weapon_slot1_row:   Control       = null
+var weapon_slot2_row:   Control       = null
+var weapon_slot1_icon:  TextureRect   = null
+var weapon_slot2_icon:  TextureRect   = null
+
+const _WEAPON_ICONS: Dictionary = {
+	"Pistol":        "res://assets/kenney_blaster-kit/Previews/blaster-a.png",
+	"Rifle":         "res://assets/kenney_blaster-kit/Previews/blaster-f.png",
+	"Heavy Blaster": "res://assets/kenney_blaster-kit/Previews/blaster-k.png",
+}
 
 signal died
 signal weapon_changed(slot: int, weapon: WeaponData)
@@ -334,13 +343,22 @@ func _update_health_bar() -> void:
 		fill_style.bg_color = Color(0.9, 0.2, 0.2, 1)
 
 func _update_weapon_label() -> void:
-	if weapon_label == null:
-		return
-	var s1: String = weapons[0].weapon_name if weapons[0] else "—"
-	var s2: String = weapons[1].weapon_name if weapons[1] else "—"
-	var marker1: String = ">" if active_slot == 0 else " "
-	var marker2: String = ">" if active_slot == 1 else " "
-	weapon_label.text = "%s[1] %s   %s[2] %s" % [marker1, s1, marker2, s2]
+	var s1: String = weapons[0].weapon_name if weapons[0] else ""
+	var s2: String = weapons[1].weapon_name if weapons[1] else ""
+
+	# Slot icons
+	if weapon_slot1_icon != null:
+		var path1: String = _WEAPON_ICONS.get(s1, "")
+		weapon_slot1_icon.texture = load(path1) if path1 != "" else null
+	if weapon_slot2_icon != null:
+		var path2: String = _WEAPON_ICONS.get(s2, "")
+		weapon_slot2_icon.texture = load(path2) if path2 != "" else null
+
+	# Active slot highlight — dim inactive row
+	if weapon_slot1_row != null:
+		weapon_slot1_row.modulate = Color(1, 1, 1, 1) if active_slot == 0 else Color(1, 1, 1, 0.40)
+	if weapon_slot2_row != null:
+		weapon_slot2_row.modulate = Color(1, 1, 1, 1) if active_slot == 1 else Color(1, 1, 1, 0.40)
 
 func _update_ammo_hud() -> void:
 	var w: WeaponData = _current_weapon()
@@ -399,6 +417,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_select_slot(0)
 	if event.is_action_pressed("weapon_slot_2"):
 		_select_slot(1)
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_select_slot(0)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_select_slot(1)
 
 func _select_slot(slot: int) -> void:
 	if slot == active_slot:

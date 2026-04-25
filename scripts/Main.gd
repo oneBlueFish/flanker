@@ -56,17 +56,23 @@ const RoleSelectDialogScene := preload("res://scenes/RoleSelectDialog.tscn")
 
 var fps_player: CharacterBody3D = null
 
-@onready var mode_label:         Label           = $HUD/ModeLabel
 @onready var game_over_label:    Label           = $HUD/GameOverLabel
-@onready var wave_info_label:    Label           = $HUD/WaveInfoLabel
-@onready var wave_announce_label: Label          = $HUD/WaveAnnounceLabel
+@onready var wave_info_label:    Label           = $HUD/WaveInfoPanel/WaveInfoLabel
+@onready var wave_announce_panel: PanelContainer = $HUD/WaveAnnouncePanel
+@onready var wave_announce_label: Label          = $HUD/WaveAnnouncePanel/WaveAnnounceLabel
 @onready var crosshair:          Control         = $HUD/Crosshair
 @onready var respawn_label:      Label           = $HUD/RespawnLabel
-@onready var weapon_label:       Label           = $HUD/WeaponLabel
-@onready var ammo_label:         Label           = $HUD/AmmoLabel
+@onready var ammo_label:         Label           = $HUD/AmmoPanel/AmmoLabel
+@onready var weapon_slot1_row:   Control         = $HUD/VitalsPanel/VitalsBox/WeaponSlots/Slot1Row
+@onready var weapon_slot2_row:   Control         = $HUD/VitalsPanel/VitalsBox/WeaponSlots/Slot2Row
+@onready var weapon_slot1_icon:  TextureRect     = $HUD/VitalsPanel/VitalsBox/WeaponSlots/Slot1Row/Slot1Icon
+@onready var weapon_slot2_icon:  TextureRect     = $HUD/VitalsPanel/VitalsBox/WeaponSlots/Slot2Row/Slot2Icon
+@onready var vitals_panel:       PanelContainer  = $HUD/VitalsPanel
 @onready var reload_prompt:      Label           = $HUD/ReloadPrompt
-@onready var points_label:      Label           = $HUD/PointsLabel
-@onready var minimap:            Control         = $HUD/Minimap
+@onready var points_label:      Label           = $HUD/PointsPanel/PointsLabel
+@onready var minimap:            Control         = $HUD/MinimapPanel/Minimap
+@onready var health_bar:         ProgressBar     = $HUD/VitalsPanel/VitalsBox/HealthBar
+@onready var stamina_bar:        ProgressBar     = $HUD/VitalsPanel/VitalsBox/StaminaBar
 @onready var audio_mode_switch:  AudioStreamPlayer = $AudioModeSwitch
 @onready var audio_wave:         AudioStreamPlayer = $AudioWave
 @onready var audio_respawn:      AudioStreamPlayer = $AudioRespawn
@@ -150,7 +156,7 @@ func _start_multiplayer_game() -> void:
 
 	_setup_bases()
 	_HUD_set_visible(true)
-	wave_announce_label.visible = false
+	wave_announce_panel.visible = false
 	wave_info_label.text = "Wave: 0 | First wave in: 10s"
 	audio_mode_switch.stream = load("res://assets/kenney_ui-audio/Audio/switch1.ogg")
 	audio_wave.stream        = load("res://assets/kenney_ui-audio/Audio/switch5.ogg")
@@ -199,6 +205,7 @@ func _start_multiplayer_game() -> void:
 		_role_dialog.visible = false
 
 	player_role = selected_role as Role
+	rts_camera.player_role = player_role
 	_death_count = 0
 	game_state = GameState.PLAYING
 
@@ -212,11 +219,9 @@ func _start_multiplayer_game() -> void:
 		_HUD_set_visible(true)
 		_set_mode(false)
 		crosshair.visible = false
-		$HUD/StaminaBar.visible = false
+		vitals_panel.visible = false
 		ammo_label.visible = false
 		reload_prompt.visible = false
-		$HUD/HealthBar.visible = false
-		mode_label.text = "Mode: RTS  [LMB] place tower  [Scroll] zoom"
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 	call_deferred("_spawn_weapon_pickups")
@@ -225,14 +230,19 @@ func _start_multiplayer_game() -> void:
 func _setup_hud_for_player() -> void:
 	if not fps_player:
 		return
-	fps_player.reload_bar    = $HUD/Crosshair/ReloadBar
-	fps_player.health_bar    = $HUD/HealthBar
-	fps_player.weapon_label  = weapon_label
-	fps_player.ammo_label    = ammo_label
-	fps_player.reload_prompt = reload_prompt
-	fps_player.stamina_bar  = $HUD/StaminaBar
-	fps_player.points_label = points_label
+	fps_player.reload_bar       = $HUD/Crosshair/ReloadBar
+	fps_player.health_bar       = health_bar
+	fps_player.ammo_label       = ammo_label
+	fps_player.reload_prompt    = reload_prompt
+	fps_player.stamina_bar      = stamina_bar
+	fps_player.points_label     = points_label
+	fps_player.weapon_slot1_row   = weapon_slot1_row
+	fps_player.weapon_slot2_row   = weapon_slot2_row
+	fps_player.weapon_slot1_icon  = weapon_slot1_icon
+	fps_player.weapon_slot2_icon  = weapon_slot2_icon
 	fps_player.connect("died", _on_player_died)
+	# Force icon population now that refs are wired
+	fps_player._update_weapon_label()
 
 func _randomize_time_of_day() -> void:
 	time_seed = randi() % 4
@@ -285,7 +295,7 @@ func _setup_lane_data() -> void:
 		LaneData.set_secret_paths(secret_paths)
 
 func _process(delta: float) -> void:
-	if _respawning:
+	if _respawning and game_state == GameState.PLAYING:
 		_respawn_timer -= delta
 		if _respawn_timer <= 0.0:
 			_do_respawn()
@@ -400,6 +410,7 @@ func _on_start_game() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	var selected_role: int = await _role_dialog.role_selected
 	player_role = selected_role as Role
+	rts_camera.player_role = player_role
 	_role_slots[player_role] = true
 	_role_dialog.visible = false
 
@@ -435,7 +446,7 @@ func _on_start_game() -> void:
 	game_state = GameState.PLAYING
 	_death_count = 0
 	get_tree().set_auto_accept_quit(true)
-	wave_announce_label.visible = false
+	wave_announce_panel.visible = false
 	wave_info_label.text = "Wave: 0 | First wave in: 10s"
 	audio_mode_switch.stream = load("res://assets/kenney_ui-audio/Audio/switch1.ogg")
 	audio_wave.stream        = load("res://assets/kenney_ui-audio/Audio/switch5.ogg")
@@ -456,11 +467,9 @@ func _on_start_game() -> void:
 		_set_mode(false)
 		# Hide fighter-specific HUD elements
 		crosshair.visible = false
-		$HUD/StaminaBar.visible = false
+		vitals_panel.visible = false
 		ammo_label.visible = false
 		reload_prompt.visible = false
-		$HUD/HealthBar.visible = false
-		mode_label.text = "Mode: RTS  [LMB] place tower  [Scroll] zoom"
 
 	loading_screen.set_status("Spawning towers & pickups...")
 	loading_screen.set_progress(92.0)
@@ -496,38 +505,42 @@ func toggle_pause(paused: bool) -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 		if fps_player:
 			fps_player.set_active(false)
-		# Keep FPS camera current so pause overlay renders over the game view
-		rts_camera.current = false
-		if fps_player and fps_player.has_node("Camera3D"):
+		# Only force the FPS camera current if we're actually in FPS mode.
+		# If the Fighter is dead (_respawning), the RTS camera is already current — leave it.
+		if fps_mode and fps_player and fps_player.has_node("Camera3D"):
+			rts_camera.current = false
 			fps_player.get_node("Camera3D").current = true
 		crosshair.visible = false
 	else:
 		game_state = GameState.PLAYING
 		_pause_menu.visible = false
-		if player_role == Role.FIGHTER and fps_player:
+		if player_role == Role.FIGHTER and fps_player and not _respawning:
+			# Normal resume — return to FPS
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 			fps_player.set_active(true)
 			rts_camera.current = false
 			fps_mode = true
 			crosshair.visible = true
-			mode_label.text = "Mode: FPS"
+		elif player_role == Role.FIGHTER and _respawning:
+			# Fighter is dead — stay in RTS view, keep waiting for respawn
+			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+			rts_camera.current = true
+			fps_mode = false
 		else:
 			# Supporter resumes RTS
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 			rts_camera.current = true
 			fps_mode = false
-			mode_label.text = "Mode: RTS  [LMB] place tower  [Scroll] zoom"
 
 func _HUD_set_visible(visible: bool) -> void:
-	mode_label.visible = visible
 	game_over_label.visible = visible and game_over
 	wave_info_label.visible = visible
 	crosshair.visible = visible and fps_mode
 	minimap.visible = visible and fps_mode
 	ammo_label.visible = visible and fps_mode
-	$HUD/StaminaBar.visible = visible and fps_mode
+	vitals_panel.visible = visible and fps_mode
 	reload_prompt.visible = visible and fps_mode
-	weapon_label.visible = visible
+	vitals_panel.visible = visible
 	points_label.visible = visible
 	respawn_label.visible = visible and _respawning
 
@@ -539,7 +552,7 @@ func _set_mode(is_fps: bool) -> void:
 	crosshair.visible   = is_fps
 	minimap.visible     = is_fps
 	ammo_label.visible  = is_fps
-	$HUD/StaminaBar.visible = is_fps
+	vitals_panel.visible = is_fps
 	if not is_fps and reload_prompt:
 		reload_prompt.visible = false
 	var world_env := $World/WorldEnvironment
@@ -547,10 +560,8 @@ func _set_mode(is_fps: bool) -> void:
 		world_env.environment.fog_enabled = is_fps
 	if is_fps:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-		mode_label.text = "Mode: FPS  [Tab] to switch"
 	else:
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-		mode_label.text = "Mode: RTS  [Tab] to switch  [LMB] place tower  [Scroll] zoom"
 
 func game_over_signal(winner: String) -> void:
 	if game_over:
@@ -568,13 +579,13 @@ func update_wave_info(wave_num: int, next_in: int) -> void:
 
 func show_wave_announcement(wave_num: int) -> void:
 	wave_announce_label.text = "— WAVE %d —" % wave_num
-	wave_announce_label.modulate.a = 1.0
-	wave_announce_label.visible = true
+	wave_announce_panel.modulate.a = 1.0
+	wave_announce_panel.visible = true
 	audio_wave.play()
 	var tween := create_tween()
 	tween.tween_interval(1.5)
-	tween.tween_property(wave_announce_label, "modulate:a", 0.0, 1.0)
-	tween.tween_callback(func(): wave_announce_label.visible = false)
+	tween.tween_property(wave_announce_panel, "modulate:a", 0.0, 1.0)
+	tween.tween_callback(func(): wave_announce_panel.visible = false)
 
 func _on_player_died() -> void:
 	if game_over:
@@ -595,7 +606,6 @@ func _on_player_died() -> void:
 	rts_camera.current    = true
 	fps_mode = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-	mode_label.text = "DEAD — respawning..."
 
 func _do_respawn() -> void:
 	_respawning = false

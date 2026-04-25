@@ -418,6 +418,9 @@ func request_place_tower(world_pos: Vector3, team: int) -> void:
 	var info: Dictionary = players.get(id, {})
 	if info.get("team", -1) != team:
 		return
+	# Only Supporters (role == 1) may place towers
+	if info.get("role", 0) != 1:
+		return
 	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
 	if build_sys == null:
 		return
