@@ -18,6 +18,8 @@ signal game_start_requested
 signal kicked_from_server
 signal player_left(id: int)
 signal role_slots_updated(claimed: Dictionary)
+signal item_spawned(item_type: String, team: int)
+signal tower_despawned(item_type: String, team: int)
 
 func _ready() -> void:
 	NetworkManager.peer_connected.connect(_on_peer_connected)
@@ -440,6 +442,7 @@ func spawn_item_visuals(world_pos: Vector3, team: int, item_type: String, subtyp
 	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
 	if build_sys != null and build_sys.has_method("spawn_item_local"):
 		build_sys.spawn_item_local(world_pos, team, item_type, subtype)
+	item_spawned.emit(item_type, team)
 
 # Legacy alias
 @rpc("authority", "call_remote", "reliable")
@@ -474,7 +477,18 @@ func despawn_tower(node_name: String) -> void:
 		return
 	var node: Node = main.get_node_or_null(node_name)
 	if node != null:
+		# Read team and type before freeing so we can emit the event
+		var node_team: int = node.get("team") if node.get("team") != null else -1
+		var node_type: String = node.get("tower_type") if node.get("tower_type") != null else _type_from_node_name(node_name)
 		node.queue_free()
+		tower_despawned.emit(node_type, node_team)
+
+func _type_from_node_name(node_name: String) -> String:
+	# Tower_%s_%d_%d — extract the type segment
+	var parts: PackedStringArray = node_name.split("_")
+	if parts.size() >= 2:
+		return parts[1].to_lower()
+	return "tower"
 
 # ── TeamData sync ─────────────────────────────────────────────────────────────
 

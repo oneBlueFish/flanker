@@ -384,3 +384,103 @@ func _sample_bezier_2d(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, n: in
 
 func get_secret_paths() -> Array:
 	return secret_paths_cache
+
+# Bake a minimap Image at the given pixel resolution.
+# Replicates the full terrain color pipeline so colors match in-game visuals.
+func bake_minimap_image(img_size: int) -> Image:
+	var seed_val: int = GameSync.game_seed
+	if seed_val == 0:
+		seed_val = 1  # fallback; terrain diverges anyway if this happens
+
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.seed = seed_val
+	noise.frequency = 0.018
+	noise.fractal_octaves = 5
+	noise.fractal_gain = 0.5
+	noise.fractal_lacunarity = 2.0
+
+	var grass_left: bool = (seed_val % 2 == 0)
+	var half: float = GRID_SIZE / 2.0
+	var lane_polylines: Array = []
+	for i in range(3):
+		lane_polylines.append(LaneData.get_lane_points(i))
+	var plateaus: Array = _gen_plateaus(seed_val, lane_polylines)
+	var peaks: Array    = _gen_peaks(seed_val, lane_polylines)
+
+	var img := Image.create(img_size, img_size, false, Image.FORMAT_RGBA8)
+	for yi in range(img_size):
+		for xi in range(img_size):
+			# pixel → world XZ (xi maps to world-x, yi maps to world-z)
+			var wx: float = (float(xi) / float(img_size - 1) - 0.5) * GRID_SIZE
+			var wz: float = (float(yi) / float(img_size - 1) - 0.5) * GRID_SIZE
+
+			var raw: float = (noise.get_noise_2d(wx, wz) + 1.0) * 0.5
+			var h: float = raw * MAX_HEIGHT
+
+			# Lane flatten
+			var min_lane_dist: float = INF
+			for poly in lane_polylines:
+				var d: float = LaneData.dist_to_polyline(Vector2(wx, wz), poly)
+				if d < min_lane_dist:
+					min_lane_dist = d
+			var lane_blend: float = 1.0
+			if min_lane_dist < LANE_FLAT_DIST:
+				lane_blend = 0.0
+			elif min_lane_dist < LANE_BLEND_DIST:
+				var t: float = (min_lane_dist - LANE_FLAT_DIST) / (LANE_BLEND_DIST - LANE_FLAT_DIST)
+				lane_blend = smoothstep(0.0, 1.0, t)
+
+			# Base zone flatten
+			var base_blend: float = 1.0
+			var az: float = abs(wz)
+			if az > BASE_FLAT_Z:
+				base_blend = 0.0
+			elif az > BASE_BLEND_Z:
+				var t: float = (az - BASE_BLEND_Z) / (BASE_FLAT_Z - BASE_BLEND_Z)
+				base_blend = 1.0 - smoothstep(0.0, 1.0, t)
+
+			h *= lane_blend * base_blend
+
+			var total_flat: float = (1.0 - lane_blend) + (1.0 - base_blend)
+
+			# Plateau lift
+			var plat_w: float = 0.0
+			if total_flat < 0.1:
+				for plat in plateaus:
+					var pw: float = _plateau_weight(Vector2(wx, wz), plat)
+					if pw > plat_w:
+						plat_w = pw
+				if plat_w > 0.0:
+					var target_h: float = PLATEAU_HEIGHT
+					h = lerp(h, max(h, target_h), plat_w)
+
+			# Peak lift
+			var pk_w: float = 0.0
+			if total_flat < 0.1:
+				for peak in peaks:
+					var pw: float = _peak_weight(Vector2(wx, wz), peak)
+					if pw > pk_w:
+						pk_w = pw
+				if pk_w > 0.0:
+					var peak_h: float = PEAK_HEIGHT * pow(pk_w, 0.6)
+					h = max(h, peak_h)
+
+			# Biome color
+			var x_norm: float = clamp(wx / BIOME_BLEND_X, -1.0, 1.0)
+			var biome_t: float = smoothstep(-1.0, 1.0, x_norm if grass_left else -x_norm)
+			var ht: float = clamp(h / MAX_HEIGHT, 0.0, 1.0)
+			var grass_col: Color = Color(0.18, 0.32, 0.10).lerp(Color(0.30, 0.42, 0.14), ht)
+			var desert_col: Color = Color(0.62, 0.48, 0.22).lerp(Color(0.52, 0.36, 0.14), ht)
+			var base_col: Color = grass_col.lerp(desert_col, biome_t)
+			base_col = base_col.lerp(Color(0.52, 0.46, 0.38), plat_w)
+			base_col = base_col.lerp(Color(0.46, 0.42, 0.40), pk_w)
+			var snow_t: float = smoothstep(SNOW_LINE, PEAK_HEIGHT, h)
+			base_col = base_col.lerp(Color(0.96, 0.97, 1.0), snow_t)
+
+			# Lane path tint (dirt colour, slightly brightened for minimap legibility)
+			if lane_blend < 1.0:
+				base_col = base_col.lerp(Color(0.60, 0.50, 0.28, 1.0), 1.0 - lane_blend)
+
+			img.set_pixel(xi, yi, base_col)
+	return img

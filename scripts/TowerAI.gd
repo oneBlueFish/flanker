@@ -150,4 +150,6 @@ func _die() -> void:
 	if multiplayer.has_multiplayer_peer():
 		LobbyManager.despawn_tower.rpc(name)
 	else:
+		var node_type: String = LobbyManager._type_from_node_name(name)
+		LobbyManager.tower_despawned.emit(node_type, team)
 		queue_free()

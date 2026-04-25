@@ -84,6 +84,7 @@ var fps_player: CharacterBody3D = null
 @onready var audio_mode_switch:  AudioStreamPlayer = $AudioModeSwitch
 @onready var audio_wave:         AudioStreamPlayer = $AudioWave
 @onready var audio_respawn:      AudioStreamPlayer = $AudioRespawn
+@onready var event_feed:         Control            = $HUD/EventFeed
 
 const WeaponPickupScene := preload("res://scenes/WeaponPickup.tscn")
 const PickupSoundPath   := "res://assets/kenney_ui-audio/Audio/switch1.ogg"
@@ -208,6 +209,7 @@ func _start_multiplayer_game() -> void:
 	rts_camera.player_role = player_role
 	_death_count = 0
 	game_state = GameState.PLAYING
+	_setup_event_feed()
 
 	# Spawn AI Supporters for any team without a human Supporter (server only)
 	if multiplayer.is_server():
@@ -252,6 +254,50 @@ func _setup_hud_for_player() -> void:
 	fps_player.connect("died", _on_player_died)
 	# Force icon population now that refs are wired
 	fps_player._update_weapon_label()
+
+# ── Event Feed ────────────────────────────────────────────────────────────────
+
+const ITEM_DISPLAY_NAMES := {
+	"cannon":      "Cannon Tower",
+	"mortar":      "Mortar Tower",
+	"slow":        "Slow Tower",
+	"barrier":     "Barrier Tower",
+	"weapon":      "Weapon Drop",
+	"healthpack":  "Health Pack",
+	"healstation": "Heal Station",
+}
+
+const TOWER_ITEM_TYPES := ["cannon", "mortar", "slow", "barrier", "healstation"]
+
+func _setup_event_feed() -> void:
+	GameSync.player_died.connect(_on_event_player_died)
+	LobbyManager.item_spawned.connect(_on_event_item_spawned)
+	LobbyManager.tower_despawned.connect(_on_event_tower_despawned)
+
+func _team_name(team: int) -> String:
+	return "Blue" if team == 0 else "Red"
+
+func _on_event_player_died(peer_id: int) -> void:
+	var killed_team: int = GameSync.get_player_team(peer_id)
+	if killed_team == -1:
+		return  # unknown team, skip
+	# Show for both: my teammate killed OR my team killed an enemy
+	event_feed.add_event("[%s] Fighter killed" % _team_name(killed_team))
+
+func _on_event_item_spawned(item_type: String, team: int) -> void:
+	if team != player_start_team:
+		return
+	var display: String = ITEM_DISPLAY_NAMES.get(item_type, item_type.capitalize())
+	if item_type in TOWER_ITEM_TYPES:
+		event_feed.add_event("[%s] %s built" % [_team_name(team), display])
+	else:
+		event_feed.add_event("Supporter placed %s" % display)
+
+func _on_event_tower_despawned(item_type: String, team: int) -> void:
+	if team != player_start_team:
+		return
+	var display: String = ITEM_DISPLAY_NAMES.get(item_type, item_type.capitalize())
+	event_feed.add_event("[%s] %s destroyed" % [_team_name(team), display])
 
 func _randomize_time_of_day() -> void:
 	if GameSync.time_seed >= 0:
@@ -487,6 +533,7 @@ func _on_start_game() -> void:
 	audio_respawn.stream     = load("res://assets/kenney_ui-audio/Audio/click1.ogg")
 
 	rts_camera.setup(player_start_team)
+	_setup_event_feed()
 
 	if player_role == Role.FIGHTER:
 		_setup_hud_for_player()
