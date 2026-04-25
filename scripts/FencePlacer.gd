@@ -66,7 +66,6 @@ func _place_lane_fences(pts: Array, lane_i: int, fence_scene: PackedScene) -> vo
 				var center_xz: Vector2 = a + seg_dir * t
 				if not _is_near_other_lane(center_xz, lane_i) and randf() >= FENCE_GAP_CHANCE:
 					var world_pos := Vector3(world_xz.x, 0.0, world_xz.y)
-					world_pos.y = _get_terrain_height(world_pos)
 					_spawn_fence(world_pos, seg_dir, fence_scene)
 				t += FENCE_SPACING
 

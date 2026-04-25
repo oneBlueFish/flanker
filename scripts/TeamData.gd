@@ -6,8 +6,8 @@ var team_points: Array = []
 
 func _ready() -> void:
 	team_points.resize(TEAM_COUNT)
-	team_points[0] = 0
-	team_points[1] = 0
+	team_points[0] = 75
+	team_points[1] = 75
 
 func add_points(team: int, amount: int) -> void:
 	if team >= 0 and team < TEAM_COUNT:

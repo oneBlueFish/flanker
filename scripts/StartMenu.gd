@@ -90,6 +90,7 @@ func _on_quit_pressed() -> void:
 
 func _on_local_pressed() -> void:
 	print("[StartMenu] Local Play - switching to Main...")
+	LaneData.regenerate_for_new_game()
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")
 
 func _on_host_confirmed() -> void:

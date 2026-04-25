@@ -146,7 +146,6 @@ func _start_multiplayer_game() -> void:
 	_setup_hud_for_player()
 	call_deferred("_spawn_weapon_pickups")
 	call_deferred("_setup_lane_data")
-	call_deferred("_spawn_preset_towers")
 
 func _setup_hud_for_player() -> void:
 	if not fps_player:
@@ -226,31 +225,6 @@ func _process(delta: float) -> void:
 			completed_respawns.append(pos)
 	for pos in completed_respawns:
 		_pending_respawns.erase(pos)
-
-func _spawn_preset_towers() -> void:
-	const TOWER_SCENE := preload("res://scenes/Tower.tscn")
-	var blue_lane_positions: Array = [
-		Vector3(-28.0, 0.0, 70.0),
-		Vector3(-3.0, 0.0, 70.0),
-		Vector3(28.0, 0.0, 70.0),
-	]
-	var red_lane_positions: Array = [
-		Vector3(28.0, 0.0, -70.0),
-		Vector3(3.0, 0.0, -70.0),
-		Vector3(-28.0, 0.0, -70.0),
-	]
-	for pos in blue_lane_positions:
-		var tower = TOWER_SCENE.instantiate()
-		pos.y = 0
-		$World.add_child(tower)
-		tower.global_position = pos
-		tower.setup(0)
-	for pos in red_lane_positions:
-		var tower = TOWER_SCENE.instantiate()
-		pos.y = 0
-		$World.add_child(tower)
-		tower.global_position = pos
-		tower.setup(1)
 
 func _get_terrain_height(pos: Vector3) -> float:
 	var world_3d: World3D = get_tree().root.get_world_3d()
@@ -375,7 +349,6 @@ func _on_start_game() -> void:
 
 	_spawn_weapon_pickups()
 	_setup_lane_data()
-	_spawn_preset_towers()
 
 	loading_screen.set_status("Ready!")
 	loading_screen.set_progress(100.0)
@@ -385,7 +358,6 @@ func _on_start_game() -> void:
 	_pick_minion_characters()
 	call_deferred("_spawn_weapon_pickups")
 	call_deferred("_setup_lane_data")
-	call_deferred("_spawn_preset_towers")
 
 func _on_resume_game() -> void:
 	toggle_pause(false)
