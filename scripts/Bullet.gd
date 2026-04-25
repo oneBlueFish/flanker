@@ -67,11 +67,16 @@ func _process(delta: float) -> void:
 func _should_damage(hit: Object) -> bool:
 	if not hit.has_method("take_damage"):
 		return false
+	# Resolve team — minions use "team", players use "player_team"
+	var hit_team = hit.get("team")
+	if hit_team == null:
+		hit_team = hit.get("player_team")
+	if hit_team == null:
+		hit_team = -999
 	# Friendly fire: same team = no damage
-	var hit_team = hit.get("team") if hit.get("team") != null else -999
-	if shooter_team != -1 and hit_team == shooter_team:
+	if shooter_team >= 0 and hit_team == shooter_team:
 		return false
-	# Player bullet hitting player = no damage (team == -1 on both sides)
+	# Player bullet hitting player = no damage
 	if shooter_team == -1 and hit_team == -1:
 		return false
 	return true

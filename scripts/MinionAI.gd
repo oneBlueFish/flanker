@@ -400,7 +400,10 @@ func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void
 		MinionDebug.log_take_damage(_minion_id, amount, health, true)
 		return  # Clients don't process damage — server only
 	if _dead:
-					return
+		return
+	# Friendly fire guard — same team = no damage
+	if _killer_team >= 0 and _killer_team == team:
+		return
 	health -= amount
 	MinionDebug.log_take_damage(_minion_id, amount, health, false)
 	if health <= 0.0:

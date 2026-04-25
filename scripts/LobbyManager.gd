@@ -255,12 +255,33 @@ func broadcast_player_transform(peer_id: int, pos: Vector3, rot: Vector3, team: 
 	GameSync.remote_player_updated.emit(peer_id, pos, rot, team)
 
 @rpc("any_peer", "reliable")
-func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_team: int, shooter_peer: int) -> void:
+func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_team: int, shooter_peer: int, hit_info: Dictionary = {}) -> void:
 	if not multiplayer.is_server():
 		return
-	
+
+	# --- Client-reported hit path (avoids server raycast hitting FPSPlayer_1) ---
+	if not hit_info.is_empty():
+		if hit_info.has("minion_id"):
+			var mid: int = hit_info["minion_id"] as int
+			var main: Node = get_tree().root.get_node("Main")
+			if main != null:
+				var minion: Node = main.get_node_or_null("Minion_%d" % mid)
+				if minion != null and minion.has_method("take_damage"):
+					# Plausibility: minion must be within 550 units of origin
+					var mpos: Vector3 = minion.global_position
+					if mpos.distance_to(origin) <= 550.0:
+						minion.take_damage(damage, "player", shooter_team)
+		elif hit_info.has("peer_id"):
+			var target_peer: int = hit_info["peer_id"] as int
+			if target_peer != shooter_peer:
+				var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team)
+				apply_player_damage.rpc(target_peer, new_hp)
+		spawn_bullet_visuals.rpc(origin, direction, damage, shooter_team)
+		return
+
+	# --- Server-side fallback (used when host fires, hit_info is empty) ---
 	var hit_result: Dictionary = _raycast_players(origin, direction)
-	
+
 	if hit_result.has("peer_id"):
 		var target_peer: int = hit_result.peer_id
 		var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team)
@@ -271,7 +292,7 @@ func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_t
 			var minion: Node = main.get_node(hit_result.minion_path)
 			if minion != null and minion.has_method("take_damage"):
 				minion.take_damage(damage, "player", shooter_team)
-	
+
 	spawn_bullet_visuals.rpc(origin, direction, damage, shooter_team)
 
 @rpc("authority", "reliable")
@@ -296,7 +317,7 @@ func _raycast_players(origin: Vector3, direction: Vector3) -> Dictionary:
 	# Check if this is (or belongs to) a player CharacterBody3D
 	var check: Node = node
 	while check != null:
-		if check.has_method("take_damage") and check.has("player_team"):
+		if check.has_method("take_damage") and check.get("player_team") != null:
 			var peer_id: int = _find_peer_id_from_node(check)
 			if peer_id > 0:
 				return {"peer_id": peer_id}

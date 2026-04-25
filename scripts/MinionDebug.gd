@@ -3,6 +3,7 @@ extends Node
 var _file: FileAccess = null
 var _role: String = ""
 var _frame: int = 0
+var _log_failed: bool = false
 
 func _ready() -> void:
 	pass  # log opened lazily on first write — peer is not set yet at _ready() time
@@ -15,15 +16,18 @@ func _open_log() -> void:
 		_role = "host"
 	else:
 		_role = "client"
-	var path: String = "/tmp/flankers_%s.log" % _role
+	var path: String = "user://flankers_%s.log" % _role
 	_file = FileAccess.open(path, FileAccess.WRITE)
 	if _file == null:
 		push_error("MinionDebug: cannot open %s (err=%d)" % [path, FileAccess.get_open_error()])
+		_log_failed = true
 		return
 	_w("=== MINION DEBUG LOG [%s] started ===" % _role.to_upper())
 	_w("peer_id=%d  is_server=%s" % [multiplayer.get_unique_id(), str(multiplayer.is_server())])
 
 func _w(msg: String) -> void:
+	if _log_failed:
+		return
 	if _file == null:
 		_open_log()
 	if _file == null:

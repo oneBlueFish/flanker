@@ -517,7 +517,8 @@ func _shoot() -> void:
 		if multiplayer.is_server():
 			LobbyManager.spawn_bullet_visuals.rpc(shoot_from.global_position, dir, w.damage, player_team)
 		else:
-			LobbyManager.validate_shot.rpc_id(1, shoot_from.global_position, dir, w.damage * player_damage_mult, player_team, _peer_id)
+			var hit_info: Dictionary = _local_raycast_hit(shoot_from.global_position, dir)
+			LobbyManager.validate_shot.rpc_id(1, shoot_from.global_position, dir, w.damage * player_damage_mult, player_team, _peer_id, hit_info)
 
 	_update_ammo_hud()
 	_play_kick_animation()
@@ -525,6 +526,39 @@ func _shoot() -> void:
 	# Auto-reload when mag hits 0
 	if _slot_ammo[active_slot][0] == 0:
 		_start_reload()
+
+# Client-side instant raycast at fire time — identifies what was aimed at so the
+# server can apply damage without needing a server-side raycast (which can't see
+# other clients' player bodies or accurately place puppet minions).
+func _local_raycast_hit(origin: Vector3, dir: Vector3) -> Dictionary:
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	if space == null:
+		return {}
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + dir * 500.0)
+	# Exclude self so we don't register hits on the shooter's own capsule
+	query.exclude = [self]
+	var result: Dictionary = space.intersect_ray(query)
+	if result.is_empty():
+		return {}
+	var node: Node = result.collider if result.collider is Node else null
+	if node == null:
+		return {}
+	# Walk up to find a damageable node
+	var check: Node = node
+	while check != null and check != get_tree().root:
+		# Skip self
+		if check == self:
+			return {}
+		# Minion puppet — identified by _minion_id
+		if check.get("_minion_id") != null and check.get("is_puppet") == true:
+			var mid: int = check.get("_minion_id") as int
+			var mteam: int = check.get("team") as int
+			# Don't report friendly minion hits
+			if mteam == player_team:
+				return {}
+			return {"minion_id": mid}
+		check = check.get_parent()
+	return {}
 
 func _start_reload() -> void:
 	if _reloading:
