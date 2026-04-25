@@ -7,7 +7,7 @@ extends Node
 const BLUE_BASE := Vector2(0.0, 82.0)   # z positive = south
 const RED_BASE  := Vector2(0.0, -82.0)  # z negative = north
 const SAMPLE_COUNT := 40  # points per lane curve
-const LANE_FLATTEN := 80  # max perturbation for control points
+const LANE_FLATTEN := 50  # max perturbation for control points
 
 # Cubic Bézier control points [P0, P1, P2, P3] in XZ (Vector2)
 # Lane 0 = Left, Lane 1 = Mid, Lane 2 = Right

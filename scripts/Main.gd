@@ -1,6 +1,10 @@
 extends Node
 
-const RESPAWN_DELAY := 5.0
+enum Role { FIGHTER, SUPPORTER }
+
+const RESPAWN_DELAY        := 5.0
+const RESPAWN_BASE: float  = 5.0
+const RESPAWN_INCREMENT: float = 5.0
 const CHARACTER_LETTERS := ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r"]
 const BLUE_SPAWN    := Vector3(0.0, 10.0, 84.0)
 const RED_SPAWN     := Vector3(0.0, 10.0, -84.0)
@@ -31,6 +35,9 @@ var fps_mode     := true
 var _respawning  := false
 var _respawn_timer: float = 0.0
 var player_start_team: int = 0
+var player_role: Role = Role.FIGHTER
+var _death_count: int = 0
+var _role_slots: Dictionary = { Role.FIGHTER: false, Role.SUPPORTER: false }
 var time_seed: int = 1  # 0=sunrise 1=noon 2=sunset 3=night
 var _blue_minion_char: String = ""
 var _red_minion_char: String = ""
@@ -41,6 +48,7 @@ var _pending_respawns: Dictionary = {}
 
 const FPSPlayerScene := preload("res://scenes/FPSPlayer.tscn")
 const MinionAI := preload("res://scripts/MinionAI.gd")
+const RoleSelectDialogScene := preload("res://scenes/RoleSelectDialog.tscn")
 
 @onready var rts_camera:         Camera3D        = $RTSCamera
 @onready var entity_hud:         Node            = $HUD/HUDOverlay/EntityHUD
@@ -70,6 +78,7 @@ const LoadingScreenScene := preload("res://scenes/LoadingScreen.tscn")
 
 var _start_menu: Control
 var _pause_menu: Control
+var _role_dialog: Control
 
 func _ready() -> void:
 	entity_hud.setup($HUD/HUDOverlay)
@@ -217,6 +226,10 @@ func _process(delta: float) -> void:
 		var player_team_name := "BLUE" if fps_player.player_team == 0 else "RED"
 		var player_pts := TeamData.get_points(fps_player.player_team)
 		points_label.text = "%s: %d" % [player_team_name, player_pts]
+	elif game_state == GameState.PLAYING:
+		var player_team_name := "BLUE" if player_start_team == 0 else "RED"
+		var player_pts := TeamData.get_points(player_start_team)
+		points_label.text = "%s: %d" % [player_team_name, player_pts]
 	var completed_respawns: Array = []
 	for pos in _pending_respawns.keys():
 		_pending_respawns[pos] -= delta
@@ -278,6 +291,9 @@ func _input(event: InputEvent) -> void:
 			return
 		if event.keycode == KEY_TAB or event.physical_keycode == KEY_TAB:
 			if game_state == GameState.PLAYING and not game_over and not _respawning:
+				# Fighters are FPS-only, supporters are RTS-only — no switching
+				if player_role == Role.FIGHTER or player_role == Role.SUPPORTER:
+					return
 				_set_mode(!fps_mode)
 				audio_mode_switch.play()
 
@@ -308,15 +324,39 @@ func _on_start_game() -> void:
 		menu_cam.set("current", false)
 		menu_cam.visible = false
 
+	loading_screen.set_status("Waiting for role selection...")
+	loading_screen.set_progress(62.0)
+	await get_tree().process_frame
+
+	# Hide loading screen so the role dialog is clickable
+	loading_screen.visible = false
+
+	# Show role select dialog — wait for player to pick
+	_role_dialog = RoleSelectDialogScene.instantiate()
+	$HUD.add_child(_role_dialog)
+	_role_dialog.set_slots(_role_slots)
+	_role_dialog.visible = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	var selected_role: int = await _role_dialog.role_selected
+	player_role = selected_role as Role
+	_role_slots[player_role] = true
+	_role_dialog.visible = false
+
+	# Bring loading screen back for remaining setup
+	loading_screen.visible = true
+
+	# Assign random team
+	player_start_team = randi() % 2
+
 	loading_screen.set_status("Spawning player...")
 	loading_screen.set_progress(65.0)
 	await get_tree().process_frame
 
-	player_start_team = randi() % 2
-	fps_player = FPSPlayerScene.instantiate()
-	fps_player.set("player_team", player_start_team)
-	add_child(fps_player)
-	fps_player.add_to_group("player")
+	if player_role == Role.FIGHTER:
+		fps_player = FPSPlayerScene.instantiate()
+		fps_player.set("player_team", player_start_team)
+		add_child(fps_player)
+		fps_player.add_to_group("player")
 
 	loading_screen.set_status("Setting up bases...")
 	loading_screen.set_progress(72.0)
@@ -329,19 +369,34 @@ func _on_start_game() -> void:
 	await get_tree().process_frame
 
 	game_state = GameState.PLAYING
-	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-	_HUD_set_visible(true)
-	_set_mode(true)
+	_death_count = 0
 	get_tree().set_auto_accept_quit(true)
 	wave_announce_label.visible = false
 	wave_info_label.text = "Wave: 0 | First wave in: 10s"
 	audio_mode_switch.stream = load("res://assets/kenney_ui-audio/Audio/switch1.ogg")
 	audio_wave.stream        = load("res://assets/kenney_ui-audio/Audio/switch5.ogg")
 	audio_respawn.stream     = load("res://assets/kenney_ui-audio/Audio/click1.ogg")
-	_setup_hud_for_player()
-	var spawn_z: float = 84.0 if player_start_team == 0 else -84.0
-	fps_player.global_position = Vector3(0.0, 10.0, spawn_z)
+
 	rts_camera.setup(player_start_team)
+
+	if player_role == Role.FIGHTER:
+		_setup_hud_for_player()
+		var spawn_z: float = 84.0 if player_start_team == 0 else -84.0
+		fps_player.global_position = Vector3(0.0, 10.0, spawn_z)
+		_HUD_set_visible(true)
+		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+		_set_mode(true)
+	else:
+		# Supporter: RTS-only
+		_HUD_set_visible(true)
+		_set_mode(false)
+		# Hide fighter-specific HUD elements
+		crosshair.visible = false
+		$HUD/StaminaBar.visible = false
+		ammo_label.visible = false
+		reload_prompt.visible = false
+		$HUD/HealthBar.visible = false
+		mode_label.text = "Mode: RTS  [LMB] place tower  [Scroll] zoom"
 
 	loading_screen.set_status("Spawning towers & pickups...")
 	loading_screen.set_progress(92.0)
@@ -371,7 +426,8 @@ func toggle_pause(paused: bool) -> void:
 		game_state = GameState.PAUSED
 		_pause_menu.visible = true
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-		fps_player.set_active(false)
+		if fps_player:
+			fps_player.set_active(false)
 		# Keep FPS camera current so pause overlay renders over the game view
 		rts_camera.current = false
 		if fps_player and fps_player.has_node("Camera3D"):
@@ -380,13 +436,19 @@ func toggle_pause(paused: bool) -> void:
 	else:
 		game_state = GameState.PLAYING
 		_pause_menu.visible = false
-		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-		if fps_player:
+		if player_role == Role.FIGHTER and fps_player:
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 			fps_player.set_active(true)
-		rts_camera.current = false
-		fps_mode = true
-		crosshair.visible = true
-		mode_label.text = "Mode: FPS  [Tab] to switch"
+			rts_camera.current = false
+			fps_mode = true
+			crosshair.visible = true
+			mode_label.text = "Mode: FPS"
+		else:
+			# Supporter resumes RTS
+			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+			rts_camera.current = true
+			fps_mode = false
+			mode_label.text = "Mode: RTS  [LMB] place tower  [Scroll] zoom"
 
 func _HUD_set_visible(visible: bool) -> void:
 	mode_label.visible = visible
@@ -449,8 +511,12 @@ func show_wave_announcement(wave_num: int) -> void:
 func _on_player_died() -> void:
 	if game_over:
 		return
+	if player_role != Role.FIGHTER:
+		return
+	_death_count += 1
+	var respawn_time: float = RESPAWN_BASE + (_death_count * RESPAWN_INCREMENT)
 	_respawning     = true
-	_respawn_timer  = RESPAWN_DELAY
+	_respawn_timer  = respawn_time
 	respawn_label.visible = true
 	crosshair.visible     = false
 	rts_camera.current    = true
