@@ -5,6 +5,7 @@ const FOG_Y   := 25.0  # above all terrain (peaks reach 22)
 const MAX_SOURCES := 64
 
 var _mat: ShaderMaterial = null
+var _sources_buf: Array[Vector4] = []
 
 func _ready() -> void:
 	_build_mesh()
@@ -48,11 +49,10 @@ func _build_mesh() -> void:
 	material_override = _mat
 
 	# Pre-fill sources array with zeroed vec4s
-	var empty: Array[Vector4] = []
-	empty.resize(MAX_SOURCES)
+	_sources_buf.resize(MAX_SOURCES)
 	for i in range(MAX_SOURCES):
-		empty[i] = Vector4(0, 0, 0, 0)
-	_mat.set_shader_parameter("sources", empty)
+		_sources_buf[i] = Vector4(0, 0, 0, 0)
+	_mat.set_shader_parameter("sources", _sources_buf)
 	_mat.set_shader_parameter("source_count", 0)
 
 func update_sources(player_pos: Vector3, player_radius: float,
@@ -61,31 +61,30 @@ func update_sources(player_pos: Vector3, player_radius: float,
 	if _mat == null:
 		return
 
-	var sources: Array[Vector4] = []
-	sources.resize(MAX_SOURCES)
-	for i in range(MAX_SOURCES):
-		sources[i] = Vector4(0, 0, 0, 0)
-
 	var count := 0
 
 	# Player
 	if count < MAX_SOURCES:
-		sources[count] = Vector4(player_pos.x, player_pos.z, player_radius, 0.0)
+		_sources_buf[count] = Vector4(player_pos.x, player_pos.z, player_radius, 0.0)
 		count += 1
 
 	# Minions
 	for pos in minion_positions:
 		if count >= MAX_SOURCES:
 			break
-		sources[count] = Vector4(pos.x, pos.z, minion_radius, 0.0)
+		_sources_buf[count] = Vector4(pos.x, pos.z, minion_radius, 0.0)
 		count += 1
 
 	# Towers
 	for pos in tower_positions:
 		if count >= MAX_SOURCES:
 			break
-		sources[count] = Vector4(pos.x, pos.z, tower_radius, 0.0)
+		_sources_buf[count] = Vector4(pos.x, pos.z, tower_radius, 0.0)
 		count += 1
 
-	_mat.set_shader_parameter("sources", sources)
+	# Zero out remaining slots
+	for i in range(count, MAX_SOURCES):
+		_sources_buf[i] = Vector4(0, 0, 0, 0)
+
+	_mat.set_shader_parameter("sources", _sources_buf)
 	_mat.set_shader_parameter("source_count", count)

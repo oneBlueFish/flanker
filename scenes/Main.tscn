@@ -1,4 +1,4 @@
-[gd_scene load_steps=22 format=3 uid="uid://main"]
+[gd_scene load_steps=24 format=3 uid="uid://main"]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/FPSPlayer.tscn" id="2"]
@@ -11,10 +11,15 @@
 [ext_resource type="Script" path="res://scripts/TreePlacer.gd" id="11"]
 [ext_resource type="Environment" path="res://assets/night_environment.tres" id="10"]
 [ext_resource type="Script" path="res://scripts/Minimap.gd" id="12"]
-[ext_resource type="Script" path="res://scripts/EntityHUD.gd" id="13"]
 [ext_resource type="Script" path="res://scripts/WallPlacer.gd" id="14"]
 [ext_resource type="Script" path="res://scripts/FencePlacer.gd" id="15"]
 [ext_resource type="Theme" path="res://assets/ui_theme.tres" id="16"]
+[ext_resource type="Shader" path="res://assets/vignette.gdshader" id="vignette_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vignette"]
+shader = ExtResource("vignette_shader")
+shader_parameter/intensity = 0.2
+shader_parameter/radius = 1.4
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_health_fill"]
 bg_color = Color(0.25, 0.75, 0.25, 1)
@@ -125,10 +130,13 @@ script = ExtResource("6")
 [node name="HUD" type="CanvasLayer" parent="."]
 theme = ExtResource("16")
 
-[node name="HUDOverlay" type="Node" parent="HUD"]
+[node name="VignetteRect" type="ColorRect" parent="HUD"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+material = SubResource("ShaderMaterial_vignette")
 
-[node name="EntityHUD" type="Node" parent="HUD/HUDOverlay"]
-script = ExtResource("13")
+[node name="HUDOverlay" type="Node" parent="HUD"]
 
 [node name="WaveInfoPanel" type="PanelContainer" parent="HUD"]
 anchors_preset = 0

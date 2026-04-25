@@ -6,7 +6,6 @@ const MIN_FOV := 30.0
 const MAX_FOV := 100.0
 
 const TOWER_MODEL_PATH := "res://assets/tower-defense-kit/Models/GLB format/tower-square-build-a.glb"
-const SLOPE_THRESHOLD := 0.85
 const TOWER_RANGE := 30.0
 const RANGE_CIRCLE_SEGMENTS := 64
 const PLAYER_VISION_RADIUS := 35.0
@@ -24,6 +23,7 @@ var _ghost_world_pos: Vector3 = Vector3.ZERO
 var _player_team: int = 0
 
 var _fog_overlay: MeshInstance3D = null
+var _main: Node = null
 
 var _range_mesh_inst: MeshInstance3D = null
 var _range_imesh: ImmediateMesh = null
@@ -32,6 +32,7 @@ var _range_mat_invalid: StandardMaterial3D = null
 
 func _ready() -> void:
 	build_system = get_node_or_null("/root/Main/BuildSystem")
+	_main = get_node_or_null("/root/Main")
 	rotation = Vector3(-PI / 2.0, 0.0, 0.0)
 	_build_ghost_materials()
 	_create_fog_overlay()
@@ -200,7 +201,7 @@ func _update_ghost() -> void:
 
 	# Slope check
 	var normal: Vector3 = result.normal
-	var on_flat_enough: bool = normal.dot(Vector3.UP) >= SLOPE_THRESHOLD
+	var on_flat_enough: bool = normal.dot(Vector3.UP) >= build_system.SLOPE_THRESHOLD
 
 	var valid: bool = on_flat_enough and build_system.can_place(snapped, _player_team)
 	if valid != _ghost_valid:
@@ -249,7 +250,7 @@ func _update_fog() -> void:
 	# Collect vision sources on the player's team
 	var sources: Array[Vector3] = []
 
-	var main: Node = get_node_or_null("/root/Main")
+	var main: Node = _main
 	var player_pos := Vector3(0.0, 0.0, 84.0 if _player_team == 0 else -84.0)
 	if main and main.get("fps_player") != null and is_instance_valid(main.fps_player):
 		player_pos = main.fps_player.global_position
@@ -295,13 +296,12 @@ func _apply_fog_to_group(group: String) -> void:
 		node.visible = _is_visible_to_sources(node.global_position)
 
 func _is_visible_to_sources(world_pos: Vector3) -> bool:
-	var main: Node = get_node_or_null("/root/Main")
 	var player_pos: Vector3 = Vector3.INF
-	if main and main.get("fps_player") != null and is_instance_valid(main.fps_player):
-		player_pos = main.fps_player.global_position
+	if _main and _main.get("fps_player") != null and is_instance_valid(_main.fps_player):
+		player_pos = _main.fps_player.global_position
 
 	# Player vision
-	if world_pos.distance_to(player_pos) <= PLAYER_VISION_RADIUS:
+	if world_pos.distance_squared_to(player_pos) <= PLAYER_VISION_RADIUS * PLAYER_VISION_RADIUS:
 		return true
 
 	# Friendly minion vision
@@ -310,7 +310,7 @@ func _is_visible_to_sources(world_pos: Vector3) -> bool:
 			continue
 		if minion.get("team") != _player_team:
 			continue
-		if world_pos.distance_to(minion.global_position) <= MINION_VISION_RADIUS:
+		if world_pos.distance_squared_to(minion.global_position) <= MINION_VISION_RADIUS * MINION_VISION_RADIUS:
 			return true
 
 	# Friendly tower vision
@@ -319,7 +319,7 @@ func _is_visible_to_sources(world_pos: Vector3) -> bool:
 			continue
 		if tower.get("team") != _player_team:
 			continue
-		if world_pos.distance_to(tower.global_position) <= TOWER_RANGE:
+		if world_pos.distance_squared_to(tower.global_position) <= TOWER_RANGE * TOWER_RANGE:
 			return true
 
 	return false

@@ -12,11 +12,8 @@ var _attack_timer := 0.0
 var _dead := false
 var _team_mat: StandardMaterial3D = null
 
-var hud_id := -1
-
 @onready var mesh: MeshInstance3D = $MeshInstance3D
 @onready var area: Area3D = $Area3D
-@onready var debug_collision: StaticBody3D = $DebugCollision
 
 const TOWER_MODEL_PATH := "res://assets/kenney_pirate-kit/Models/GLB format/tower-complete-small.glb"
 
@@ -25,31 +22,24 @@ func setup(p_team: int) -> void:
 	add_to_group("towers")
 	# Load and instance the model in code
 	_load_team_model()
-	# Enable debug collision visual
-	debug_collision.visible = true
 	# Resize collision sphere
 	var shape: SphereShape3D = SphereShape3D.new()
 	shape.radius = attack_range
 	$Area3D/CollisionShape3D.shape = shape
-	# Register health bar
-	var entity_hud := get_node_or_null("/root/Main/HUD/HUDOverlay/EntityHUD")
-	if entity_hud and entity_hud.has_method("register_entity"):
-		hud_id = entity_hud.call("register_entity", self, MAX_HEALTH, team)
 
 func _load_team_model() -> void:
 	var gltf := GLTFDocument.new()
 	var state := GLTFState.new()
 	var err := gltf.append_from_file(TOWER_MODEL_PATH, state)
 	if err != OK:
-		print("TowerAI: GLTF failed error=", err)
+		push_error("TowerAI: GLTF failed error=" + str(err))
 		return
 	var root: Node3D = gltf.generate_scene(state)
 	if not root:
-		print("TowerAI: generate_scene failed")
+		push_error("TowerAI: generate_scene failed")
 		return
 	add_child(root)
 	_add_hit_overlay()
-	print("TowerAI: loaded model")
 
 func _add_hit_overlay() -> void:
 	for child in get_children():
@@ -114,10 +104,6 @@ func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void
 		return
 	health -= amount
 	_hit_flash()
-	if hud_id > 0:
-		var entity_hud := get_node_or_null("/root/Main/HUD/HUDOverlay/EntityHUD")
-		if entity_hud and entity_hud.has_method("update_entity_health"):
-			entity_hud.call("update_entity_health", hud_id, health)
 	if health <= 0:
 		_die()
 

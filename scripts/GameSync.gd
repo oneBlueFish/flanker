@@ -3,6 +3,7 @@ extends Node
 const TEAM_COUNT := 2
 
 var game_seed: int = 0
+var time_seed: int = -1  # -1 = random; 0=sunrise 1=noon 2=sunset 3=night
 var player_healths: Dictionary = {}
 var player_teams: Dictionary = {}
 var player_spawn_positions: Dictionary = {}
@@ -30,12 +31,9 @@ func set_player_health(peer_id: int, hp: float) -> void:
 	player_health_changed.emit(peer_id, hp)
 
 func get_player_team(peer_id: int) -> int:
-	var t: int = player_teams.get(peer_id, -1)
-	print("[DBG GAMESYNC] get_player_team peer=%d -> team=%d | all_teams=%s" % [peer_id, t, player_teams])
-	return t
+	return player_teams.get(peer_id, -1)
 
 func set_player_team(peer_id: int, team: int) -> void:
-	print("[DBG GAMESYNC] set_player_team peer=%d team=%d" % [peer_id, team])
 	player_teams[peer_id] = team
 
 func damage_player(peer_id: int, amount: float, source_team: int) -> float:
@@ -43,7 +41,6 @@ func damage_player(peer_id: int, amount: float, source_team: int) -> float:
 		return player_healths.get(peer_id, 0.0)
 	var before: float = get_player_health(peer_id)
 	var hp: float = before - amount
-	print("[DBG GAMESYNC] damage_player peer=%d | source_team=%d | hp_before=%f hp_after=%f" % [peer_id, source_team, before, hp])
 	player_healths[peer_id] = hp
 	player_health_changed.emit(peer_id, hp)
 	

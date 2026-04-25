@@ -14,9 +14,13 @@ var shooter_team: int    = -1
 var _velocity: Vector3 = Vector3.ZERO
 var _age: float        = 0.0
 var _light: OmniLight3D = null
+var _flicker_timer: float = 0.0
+const FLICKER_INTERVAL := 0.05  # update light ~20fps
 
 func _ready() -> void:
 	_light = get_node_or_null("OmniLight3D")
+	# Tint tracer particle light by team (reuse shared helper material logic)
+	# Note: Cannonball uses OmniLight not a mesh tracer, no material needed here.
 
 	# Compute ballistic velocity so we arrive at target_pos in FLIGHT_TIME seconds.
 	# x/z components are constant; y must overcome gravity over the arc.
@@ -42,18 +46,21 @@ func _process(delta: float) -> void:
 	var result: Dictionary = space.intersect_ray(query)
 
 	if not result.is_empty():
-		_impact(result.position, result.get("normal", Vector3.UP), result.collider)
+		_impact(result.position, result.collider)
 		return
 
 	global_position = new_pos
 
-	# Flicker the light slightly
+	# Flicker the light at reduced rate
 	if _light:
-		_light.light_energy = randf_range(1.6, 2.4)
+		_flicker_timer += delta
+		if _flicker_timer >= FLICKER_INTERVAL:
+			_flicker_timer = 0.0
+			_light.light_energy = randf_range(1.6, 2.4)
 
-func _impact(pos: Vector3, normal: Vector3, direct_hit: Object) -> void:
+func _impact(pos: Vector3, direct_hit: Object) -> void:
 	# Direct hit damage
-	if _should_damage(direct_hit):
+	if CombatUtils.should_damage(direct_hit, shooter_team):
 		direct_hit.take_damage(damage, "cannonball", shooter_team)
 
 	# Splash damage — nearby bodies in a sphere
@@ -69,10 +76,10 @@ func _impact(pos: Vector3, normal: Vector3, direct_hit: Object) -> void:
 		var body: Object = overlap.get("collider")
 		if body == null or body == direct_hit:
 			continue
-		if _should_damage(body):
+		if CombatUtils.should_damage(body, shooter_team):
 			body.take_damage(damage * SPLASH_DAMAGE_MULT, "cannonball_splash", shooter_team)
 
-	_spawn_impact(pos, normal)
+	_spawn_impact(pos)
 	queue_free()
 
 func _should_damage(hit: Object) -> bool:
@@ -85,10 +92,10 @@ func _should_damage(hit: Object) -> bool:
 		return false
 	return true
 
-func _spawn_impact(pos: Vector3, normal: Vector3) -> void:
+func _spawn_impact(pos: Vector3) -> void:
 	var particles := GPUParticles3D.new()
 	var pmat := ParticleProcessMaterial.new()
-	pmat.direction = normal
+	pmat.direction = Vector3.UP
 	pmat.spread = 60.0
 	pmat.initial_velocity_min = 4.0
 	pmat.initial_velocity_max = 10.0

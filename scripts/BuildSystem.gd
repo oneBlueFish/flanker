@@ -8,9 +8,6 @@ const MIN_TOWER_SPACING := 20.0
 
 var _tower_scene: PackedScene = null
 
-# Player team for placed towers (always blue in single-player prototype)
-var player_team := 0
-
 func _ready() -> void:
 	_tower_scene = load(TOWER_SCENE)
 

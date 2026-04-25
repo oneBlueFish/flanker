@@ -14,7 +14,6 @@ var _dirty := false
 
 signal lobby_updated
 signal game_start_requested
-signal player_joined(id: int, info: Dictionary)
 signal kicked_from_server
 signal player_left(id: int)
 signal role_slots_updated(claimed: Dictionary)
@@ -26,6 +25,11 @@ func _ready() -> void:
 	NetworkManager.server_disconnected.connect(_on_server_disconnected)
 	_init_bullet_sync()
 	_init_minion_sync()
+	GameSync.player_respawned.connect(_on_game_sync_player_respawned)
+
+func _on_game_sync_player_respawned(peer_id: int, spawn_pos: Vector3) -> void:
+	if multiplayer.is_server():
+		notify_player_respawned.rpc(peer_id, spawn_pos)
 
 func _process(_delta: float) -> void:
 	if not multiplayer.has_multiplayer_peer():
@@ -46,8 +50,6 @@ func register_player_local(peer_id: int, new_player_name: String) -> void:
 		"avatar_char": ""
 	}
 	players[peer_id] = player_info
-	print("Player registered: ", new_player_name, " (ID: ", peer_id, ") team: ", assigned_team)
-	player_joined.emit(peer_id, player_info)
 	_dirty = true
 	lobby_updated.emit()
 
@@ -127,15 +129,16 @@ func load_game_scene(path: String) -> void:
 	get_tree().change_scene_to_file(path)
 
 @rpc("authority", "call_local", "reliable")
-func notify_game_seed(new_seed: int) -> void:
+func notify_game_seed(new_seed: int, new_time_seed: int) -> void:
 	GameSync.game_seed = new_seed
+	GameSync.time_seed = new_time_seed
 	LaneData.regenerate_for_new_game()
 
-func start_game(path: String) -> void:
-	var s: int = randi()
+func start_game(path: String, map_seed: int = 0, time_seed: int = -1) -> void:
+	var s: int = map_seed if map_seed > 0 else randi()
 	if s == 0:
 		s = 1  # never send seed=0; TerrainGenerator fallback path means client diverges
-	notify_game_seed.rpc(s)  # call_local — sets GameSync.game_seed on server too
+	notify_game_seed.rpc(s, time_seed)  # call_local — sets GameSync on server too
 	supporter_claimed = { 0: false, 1: false }
 	player_death_counts.clear()
 	game_started = true
@@ -291,8 +294,6 @@ func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_t
 	if not multiplayer.is_server():
 		return
 
-	print("[DBG VALIDATE] server recv shot from peer=%d team=%d | hit_info=%s" % [shooter_peer, shooter_team, hit_info])
-
 	# --- Client-reported hit path (avoids server raycast hitting FPSPlayer_1) ---
 	if not hit_info.is_empty():
 		if hit_info.has("minion_id"):
@@ -301,34 +302,30 @@ func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_t
 			if main != null:
 				var minion: Node = main.get_node_or_null("Minion_%d" % mid)
 				if minion != null and minion.has_method("take_damage"):
-					# Plausibility: minion must be within 550 units of origin
 					var mpos: Vector3 = minion.global_position
 					if mpos.distance_to(origin) <= 550.0:
 						minion.take_damage(damage, "player", shooter_team)
 		elif hit_info.has("peer_id"):
 			var target_peer: int = hit_info["peer_id"] as int
-			print("[DBG VALIDATE] hit_info peer_id=%d | shooter_peer=%d | same=%s" % [target_peer, shooter_peer, target_peer == shooter_peer])
 			if target_peer != shooter_peer and not GameSync.player_dead.get(target_peer, false):
 				var target_team: int = GameSync.get_player_team(target_peer)
-				print("[DBG VALIDATE] applying damage to peer=%d team=%d | shooter_team=%d | damage=%f" % [target_peer, target_team, shooter_team, damage])
-				# Friendly fire guard: skip if same team. -1 means team not yet registered — allow damage rather than silently drop.
 				if target_team == -1 or target_team != shooter_team:
 					var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team)
-					print("[DBG VALIDATE] new_hp for peer=%d = %f" % [target_peer, new_hp])
 					apply_player_damage.rpc(target_peer, new_hp)
-				else:
-					print("[DBG VALIDATE] friendly fire blocked peer=%d team=%d shooter_team=%d" % [target_peer, target_team, shooter_team])
+					if new_hp <= 0.0:
+						notify_player_died.rpc(target_peer)
 		spawn_bullet_visuals.rpc(origin, direction, damage, shooter_team)
 		return
 
 	# --- Server-side fallback (used when host fires, hit_info is empty) ---
-	print("[DBG VALIDATE] hit_info empty, using server-side fallback raycast")
 	var hit_result: Dictionary = _raycast_players(origin, direction)
 
 	if hit_result.has("peer_id"):
 		var target_peer: int = hit_result.peer_id
 		var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team)
 		apply_player_damage.rpc(target_peer, new_hp)
+		if new_hp <= 0.0:
+			notify_player_died.rpc(target_peer)
 	elif hit_result.has("minion_path"):
 		var main: Node = get_tree().root.get_node("Main")
 		if main != null:
@@ -340,8 +337,18 @@ func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_t
 
 @rpc("authority", "call_local", "reliable")
 func apply_player_damage(peer_id: int, new_health: float) -> void:
-	print("[DBG DAMAGE] apply_player_damage recv on peer=%d | target_peer=%d new_hp=%f" % [multiplayer.get_unique_id(), peer_id, new_health])
 	GameSync.set_player_health(peer_id, new_health)
+
+@rpc("authority", "call_remote", "reliable")
+func notify_player_died(peer_id: int) -> void:
+	GameSync.player_dead[peer_id] = true
+	GameSync.player_died.emit(peer_id)
+
+@rpc("authority", "call_remote", "reliable")
+func notify_player_respawned(peer_id: int, spawn_pos: Vector3) -> void:
+	GameSync.player_healths[peer_id] = GameSync.PLAYER_MAX_HP
+	GameSync.player_dead[peer_id] = false
+	GameSync.player_respawned.emit(peer_id, spawn_pos)
 
 func _raycast_players(origin: Vector3, direction: Vector3) -> Dictionary:
 	var space: PhysicsDirectSpaceState3D = get_tree().root.get_world_3d().direct_space_state
@@ -395,18 +402,11 @@ func sync_minion_states(ids: PackedInt32Array, positions: PackedVector3Array,
 		rotations: PackedFloat32Array, healths: PackedFloat32Array) -> void:
 	var main: Node = get_tree().root.get_node_or_null("Main")
 	if main == null:
-		MinionDebug.log_rpc("sync_minion_states_NOROOT", "count=%d" % ids.size())
 		return
-	var found_count: int = 0
-	var missing: Array = []
 	for i in ids.size():
 		var minion: Node = main.get_node_or_null("Minion_%d" % ids[i])
 		if minion != null and minion.has_method("apply_puppet_state"):
-			found_count += 1
 			minion.apply_puppet_state(positions[i], rotations[i], healths[i])
-		else:
-			missing.append(ids[i])
-	MinionDebug.log_rpc("sync_minion_states", "count=%d found=%d missing=%s" % [ids.size(), found_count, str(missing)])
 
 # ── Tower sync ────────────────────────────────────────────────────────────────
 

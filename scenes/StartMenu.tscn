@@ -1,9 +1,10 @@
-[gd_scene load_steps=5 format=3 uid="uid://start_menu"]
+[gd_scene load_steps=6 format=3 uid="uid://start_menu"]
 
 [ext_resource type="Script" path="res://scripts/MenuCamera.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/StartMenu.gd" id="2"]
 [ext_resource type="Environment" path="res://assets/menu_environment.tres" id="3"]
 [ext_resource type="Theme" path="res://assets/ui_theme.tres" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/SettingsPanel.tscn" id="5"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
 bg_color = Color(0.04, 0.05, 0.06, 0.78)
@@ -105,15 +106,15 @@ theme = ExtResource("4")
 text = "QUIT"
 
 [node name="Spacer4" type="Control" parent="MenuPanel/VBox"]
-custom_minimum_size = Vector2(0, 12)
+custom_minimum_size = Vector2(0, 8)
 layout_mode = 2
 
-[node name="HintLabel" type="Label" parent="MenuPanel/VBox"]
+[node name="SettingsButton" type="Button" parent="MenuPanel/VBox"]
 layout_mode = 2
-text = "Esc to quit"
-horizontal_alignment = 1
-theme_override_colors/font_color = Color(0.35, 0.30, 0.25, 1)
-theme_override_font_sizes/font_size = 12
+custom_minimum_size = Vector2(260, 36)
+theme = ExtResource("4")
+text = "SETTINGS"
+
 
 [node name="ConnectionStatus" type="Label" parent="."]
 visible = false
@@ -136,3 +137,11 @@ vertical_alignment = 1
 [connection signal="pressed" from="MenuPanel/VBox/JoinButton" to="." method="_on_join_pressed"]
 [connection signal="pressed" from="MenuPanel/VBox/LocalButton" to="." method="_on_local_pressed"]
 [connection signal="pressed" from="MenuPanel/VBox/QuitButton" to="." method="_on_quit_pressed"]
+[connection signal="pressed" from="MenuPanel/VBox/SettingsButton" to="." method="_on_settings_pressed"]
+
+[node name="SettingsPanelInstance" parent="." instance=ExtResource("5")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+visible = false

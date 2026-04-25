@@ -27,13 +27,13 @@ TeamData="*res://scripts/TeamData.gd"
 NetworkManager="*res://scripts/NetworkManager.gd"
 LobbyManager="*res://scripts/LobbyManager.gd"
 LoadingState="*res://scripts/LoadingState.gd"
-MinionDebug="*res://scripts/MinionDebug.gd"
+GraphicsSettings="*res://scripts/GraphicsSettings.gd"
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
-window/stretch/mode="canvas_items"
+window/stretch/mode="disabled"
 
 [input]
 

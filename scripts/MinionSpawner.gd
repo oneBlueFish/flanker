@@ -42,7 +42,6 @@ func _broadcast_minion_states() -> void:
 		positions.append(m.global_position)
 		rotations.append(m.rotation.y)
 		healths.append(m.get("health") as float)
-	MinionDebug.log_broadcast(ids.size())
 	LobbyManager.sync_minion_states.rpc(ids, positions, rotations, healths)
 
 func _process(delta: float) -> void:
@@ -69,7 +68,6 @@ func _launch_wave() -> void:
 		LobbyManager.sync_wave_announcement.rpc(wave_number)
 
 	var count: int = min(wave_number, 5)
-	MinionDebug.log_wave(wave_number, count * 3 * 2)  # count per lane * 3 lanes * 2 teams
 	for lane_i in range(3):
 		for i in range(count):
 			var delay := i * MINION_STAGGER
@@ -90,10 +88,8 @@ func _spawn_minion(team: int, lane_i: int) -> void:
 	_minion_counter += 1
 	var minion_id: int = _minion_counter
 	_spawn_at_position(team, spawn_pos, waypts, lane_i, minion_id)
-	MinionDebug.log_spawn(minion_id, team, spawn_pos, false)
 
 	if multiplayer.is_server():
-		MinionDebug.log_rpc("spawn_minion_visuals", "id=%d team=%d pos=%s" % [minion_id, team, str(spawn_pos)])
 		LobbyManager.spawn_minion_visuals.rpc(team, spawn_pos, waypts, lane_i, minion_id)
 
 func _spawn_at_position(team: int, pos: Vector3, waypts: Array[Vector3], lane_i: int, minion_id: int) -> void:
@@ -117,10 +113,8 @@ func spawn_for_network(team: int, pos: Vector3, waypts: Array[Vector3], lane_i: 
 		minion.set("velocity", Vector3.ZERO)
 		minion.set("_puppet_target_pos", pos)
 		minion.call("set_physics_process", false)
-		MinionDebug.log_spawn(minion_id, team, pos, true)
-		MinionDebug.log_puppet_set(minion_id, pos)
 	else:
-		MinionDebug.log_rpc("spawn_for_network_FAIL", "id=%d node_not_found" % minion_id)
+		push_warning("MinionSpawner: spawn_for_network id=%d node not found" % minion_id)
 
 func get_terrain_height(pos: Vector3) -> float:
 	return _get_terrain_height(pos)

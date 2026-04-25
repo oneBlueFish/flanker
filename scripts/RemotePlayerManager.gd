@@ -40,9 +40,17 @@ func _on_player_died(peer_id: int) -> void:
 		var g: Node3D = _ghosts[peer_id]
 		if is_instance_valid(g):
 			g.visible = false
+			var hit_body: StaticBody3D = g.get_node_or_null("HitBody")
+			if hit_body != null:
+				hit_body.set_collision_layer(0)
+				hit_body.set_collision_mask(0)
 
 func _on_player_respawned(peer_id: int, _spawn_pos: Vector3) -> void:
 	if _ghosts.has(peer_id):
 		var g: Node3D = _ghosts[peer_id]
 		if is_instance_valid(g):
 			g.visible = true
+			var hit_body: StaticBody3D = g.get_node_or_null("HitBody")
+			if hit_body != null:
+				hit_body.set_collision_layer(1)
+				hit_body.set_collision_mask(0)

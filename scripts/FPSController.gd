@@ -38,6 +38,13 @@ const FOV_NORMAL  := 75.0
 const FOV_ZOOM    := 30.0
 const FOV_LERP    := 12.0
 
+const DOF_FOCUS_MAX         := 80.0  # fallback focus dist when ray misses (sky/open space)
+const DOF_FOCUS_RAY         := 150.0 # max raycast length for focus detection
+const DOF_FOCUS_LERP        := 8.0   # tracking speed — lower = lazier/dreamier, higher = snappy
+const DOF_TRANSITION_NORMAL := 25.0  # far blur ramp length at normal FOV
+const DOF_TRANSITION_ZOOM   := 10.0  # far blur ramp length when zoomed (tighter = crisper falloff)
+# near blur distance/transition are read directly from assets/fps_camera_attributes.tres
+
 const CAM_Y_STAND  := 0.8
 const CAM_Y_CROUCH := 0.45
 const CAP_H_STAND  := 1.8
@@ -51,8 +58,6 @@ var active    := true
 var hp: float  = MAX_HP
 var _dead      := false
 var _crouching := false
-var hud_ui: Control = null
-var hud_id: int = 0
 
 # Fire cooldown (inter-shot delay)
 var _fire_timer: float = 0.0
@@ -153,8 +158,17 @@ func _ready() -> void:
 	_refresh_viewmodel()
 	_update_weapon_label()
 	_update_ammo_hud()
-	_create_hud_element(hud_id, MAX_HP, player_team)
 	call_deferred("_init_avatar")
+	if _is_local:
+		call_deferred("_apply_dof_settings")
+		GraphicsSettings.settings_changed.connect(_apply_dof_settings)
+
+func _apply_dof_settings() -> void:
+	if camera.attributes == null:
+		return
+	camera.attributes.dof_blur_far_enabled = GraphicsSettings.dof_enabled
+	camera.attributes.dof_blur_near_enabled = false  # re-controlled per-frame when zoomed
+	camera.attributes.dof_blur_amount = GraphicsSettings.dof_blur_amount
 
 func _init_avatar() -> void:
 	# Load the character GLB for this player's avatar.
@@ -220,25 +234,11 @@ func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void
 	hp = max(0.0, hp - amount)
 	camera_shake_time = 0.15
 	_update_health_bar()
-	_update_hud_health()
 	if hp <= 0.0:
 		_on_death()
 		var awarding_team: int = _killer_team if _killer_team >= 0 else 1
 		TeamData.add_points(awarding_team, 50)
 		_update_points_label()
-
-func _create_hud_element(_unused_id: int, max_health: float, team: int) -> void:
-	var entity_hud := get_node_or_null("/root/Main/HUD/HUDOverlay/EntityHUD")
-	if entity_hud and entity_hud.has_method("register_entity"):
-		hud_id = entity_hud.call("register_entity", self, max_health, team)
-		var entry: Dictionary = entity_hud.call("get_entity_by_id", hud_id)
-		if not entry.is_empty():
-			hud_ui = entry.ui_node
-
-func _update_hud_health() -> void:
-	var entity_hud := get_node_or_null("/root/Main/HUD/HUDOverlay/EntityHUD")
-	if entity_hud and hud_ui and hud_id > 0:
-		entity_hud.call("update_entity_health", hud_id, hp)
 
 func _load_default_weapon() -> void:
 	var default_weapon: WeaponData = load(DEFAULT_WEAPON_PATH)
@@ -328,12 +328,10 @@ func _update_health_bar() -> void:
 	if health_bar == null:
 		return
 	health_bar.value = (hp / MAX_HP) * 100.0
-	
 	var fill_style: StyleBoxFlat = health_bar.get_theme_stylebox("fill")
 	if fill_style == null:
 		fill_style = StyleBoxFlat.new()
 		health_bar.add_theme_stylebox_override("fill", fill_style)
-	
 	var health_pct: float = hp / MAX_HP
 	if health_pct > 0.6:
 		fill_style.bg_color = Color(0.2, 0.9, 0.2, 1)
@@ -401,8 +399,6 @@ func _current_weapon() -> WeaponData:
 	return weapons[active_slot]
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed:
-		print("[FPSController] _unhandled_input: keycode=", event.keycode)
 	if not active:
 		return
 	if event is InputEventMouseMotion:
@@ -480,6 +476,27 @@ func _physics_process(delta: float) -> void:
 	var target_fov: float = FOV_ZOOM if Input.is_action_pressed("zoom") else FOV_NORMAL
 	camera.fov = lerp(camera.fov, target_fov, FOV_LERP * delta)
 
+	# Depth of Field — focus tracks whatever the crosshair is pointing at.
+	# Tune constants DOF_FOCUS_MAX / DOF_FOCUS_LERP / DOF_TRANSITION_* at the top of this file.
+	# dof_blur_amount lives in assets/fps_camera_attributes.tres (overridden by GraphicsSettings).
+	if camera.attributes != null and GraphicsSettings.dof_enabled:
+		var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+		var focus_dist: float = DOF_FOCUS_MAX
+		if space != null:
+			var origin: Vector3 = camera.global_position
+			var forward: Vector3 = -camera.global_transform.basis.z
+			var query := PhysicsRayQueryParameters3D.create(origin, origin + forward * DOF_FOCUS_RAY)
+			query.exclude = [self]
+			var hit: Dictionary = space.intersect_ray(query)
+			if not hit.is_empty():
+				focus_dist = origin.distance_to(hit.position)
+		var zoomed: bool = camera.fov < (FOV_NORMAL + FOV_ZOOM) * 0.5
+		var target_transition: float = DOF_TRANSITION_ZOOM if zoomed else DOF_TRANSITION_NORMAL
+		camera.attributes.dof_blur_far_distance   = lerp(camera.attributes.dof_blur_far_distance,   focus_dist,        DOF_FOCUS_LERP * delta)
+		camera.attributes.dof_blur_far_transition = lerp(camera.attributes.dof_blur_far_transition, target_transition, FOV_LERP * delta)
+		camera.attributes.dof_blur_near_enabled    = zoomed
+		# near distance/transition stay as set in assets/fps_camera_attributes.tres
+
 	# Fire cooldown tick
 	if _fire_cooling:
 		_fire_timer -= delta
@@ -497,8 +514,8 @@ func _physics_process(delta: float) -> void:
 		_update_reload_bar()
 
 	# Gun bob — suppressed during reload or kick (tween owns position)
-	var speed: float = Vector2(velocity.x, velocity.z).length()
-	if not _reloading and not _kicking and is_on_floor() and speed > 0.5:
+	var speed_sq: float = Vector2(velocity.x, velocity.z).length_squared()
+	if not _reloading and not _kicking and is_on_floor() and speed_sq > 0.25:
 		_bob_time += delta * BOB_FREQ
 		var h: float = sin(_bob_time) * BOB_H_AMP
 		var v: float = abs(sin(_bob_time)) * BOB_V_AMP
@@ -541,7 +558,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_pressed("move_left"):    dir -= basis.x
 	if Input.is_action_pressed("move_right"):   dir += basis.x
 	dir.y = 0
-	if dir.length() > 0:
+	if dir.length_squared() > 0.0:
 		dir = dir.normalized()
 	velocity.x = dir.x * cur_speed
 	velocity.z = dir.z * cur_speed
@@ -549,8 +566,8 @@ func _physics_process(delta: float) -> void:
 
 	# Drive avatar walk/idle animation from actual velocity
 	if _avatar_anim != null and _avatar_anim.is_inside_tree():
-		var horiz_speed: float = Vector2(velocity.x, velocity.z).length()
-		var want_anim: String = "walk" if horiz_speed > 0.5 else "idle"
+		var horiz_speed_sq: float = Vector2(velocity.x, velocity.z).length_squared()
+		var want_anim: String = "walk" if horiz_speed_sq > 0.25 else "idle"
 		if _avatar_anim.current_animation != want_anim:
 			_avatar_anim.play(want_anim)
 
@@ -613,11 +630,9 @@ func _shoot() -> void:
 	# Send to host for authoritative validation + broadcast to other clients
 	if multiplayer.has_multiplayer_peer():
 		if multiplayer.is_server():
-			print("[DBG SHOOT] HOST fired | team=%d | pos=%s | dir=%s" % [player_team, shoot_from.global_position, dir])
 			LobbyManager.spawn_bullet_visuals.rpc(shoot_from.global_position, dir, w.damage, player_team)
 		else:
 			var hit_info: Dictionary = _local_raycast_hit(shoot_from.global_position, dir)
-			print("[DBG SHOOT] CLIENT peer=%d team=%d fired | hit_info=%s" % [_peer_id, player_team, hit_info])
 			LobbyManager.validate_shot.rpc_id(1, shoot_from.global_position, dir, w.damage * player_damage_mult, player_team, _peer_id, hit_info)
 
 	_update_ammo_hud()
@@ -633,58 +648,39 @@ func _shoot() -> void:
 func _local_raycast_hit(origin: Vector3, dir: Vector3) -> Dictionary:
 	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	if space == null:
-		print("[DBG RAYCAST] peer=%d no space state" % _peer_id)
 		return {}
 	var query := PhysicsRayQueryParameters3D.create(origin, origin + dir * 500.0)
-	# Exclude self so we don't register hits on the shooter's own capsule
 	query.exclude = [self]
 	var result: Dictionary = space.intersect_ray(query)
 	if result.is_empty():
-		print("[DBG RAYCAST] peer=%d NO HIT" % _peer_id)
 		return {}
 	var node: Node = result.collider if result.collider is Node else null
-	print("[DBG RAYCAST] peer=%d raw collider=%s pos=%s" % [_peer_id, result.collider, result.position])
 	if node == null:
 		return {}
-	# Walk up to find a damageable node
 	var check: Node = node
 	while check != null and check != get_tree().root:
-		print("[DBG RAYCAST] peer=%d walking node=%s class=%s" % [_peer_id, check.name, check.get_class()])
-		# Skip self
 		if check == self:
-			print("[DBG RAYCAST] peer=%d hit self, returning empty" % _peer_id)
 			return {}
-		# Remote player ghost hitbox — has ghost_peer_id meta on StaticBody3D
 		if check.has_meta("ghost_peer_id"):
 			var ghost_peer: int = check.get_meta("ghost_peer_id") as int
-			print("[DBG RAYCAST] peer=%d found ghost_peer_id=%d" % [_peer_id, ghost_peer])
 			if ghost_peer > 0 and ghost_peer != _peer_id:
 				return {"peer_id": ghost_peer}
-		# Host player body — FPSPlayer_<id> CharacterBody3D has no ghost node on clients.
-		# Detect it by node name and presence of player_team property.
 		if check.name.begins_with("FPSPlayer_") and check.get("player_team") != null:
 			var id_str: String = check.name.substr(10)
 			if id_str.is_valid_int():
 				var host_peer: int = id_str.to_int()
 				var target_team: int = GameSync.get_player_team(host_peer)
-				var node_team: int = check.get("player_team") as int
-				print("[DBG RAYCAST] peer=%d hit FPSPlayer_ node=%s host_peer=%d | GameSync.team=%d node.player_team=%d | my_team=%d" % [_peer_id, check.name, host_peer, target_team, node_team, player_team])
 				if host_peer != _peer_id:
 					if target_team != player_team:
-						print("[DBG RAYCAST] peer=%d -> returning peer_id=%d (enemy)" % [_peer_id, host_peer])
 						return {"peer_id": host_peer}
-					print("[DBG RAYCAST] peer=%d -> BLOCKED: same team (GameSync team=%d == my team=%d)" % [_peer_id, target_team, player_team])
 					return {}
-		# Minion puppet — identified by _minion_id
 		if check.get("_minion_id") != null and check.get("is_puppet") == true:
 			var mid: int = check.get("_minion_id") as int
 			var mteam: int = check.get("team") as int
-			# Don't report friendly minion hits
 			if mteam == player_team:
 				return {}
 			return {"minion_id": mid}
 		check = check.get_parent()
-	print("[DBG RAYCAST] peer=%d walked to root, no damageable found" % _peer_id)
 	return {}
 
 func _start_reload() -> void:
@@ -795,7 +791,6 @@ func _on_game_sync_health_changed(peer_id: int, new_hp: float) -> void:
 	hp = new_hp
 	camera_shake_time = 0.15
 	_update_health_bar()
-	_update_hud_health()
 	if hp <= 0.0:
 		_on_death()
 		var awarding_team: int = 1 - player_team

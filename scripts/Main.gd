@@ -2,9 +2,6 @@ extends Node
 
 enum Role { FIGHTER, SUPPORTER }
 
-const RESPAWN_DELAY        := 5.0
-const RESPAWN_BASE: float  = 5.0
-const RESPAWN_INCREMENT: float = 5.0
 const CHARACTER_LETTERS := ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r"]
 const BLUE_SPAWN    := Vector3(0.0, 10.0, 84.0)
 const RED_SPAWN     := Vector3(0.0, 10.0, -84.0)
@@ -41,6 +38,7 @@ var _role_slots: Dictionary = { Role.FIGHTER: false, Role.SUPPORTER: false }
 var time_seed: int = 1  # 0=sunrise 1=noon 2=sunset 3=night
 var _blue_minion_char: String = ""
 var _red_minion_char: String = ""
+var _is_fps_mode: bool = true  # tracked so fog can be reapplied on settings change
 var _player_avatar_char: String = "a"
 
 var _active_pickup_positions: Array[Vector3] = []
@@ -52,7 +50,13 @@ const MinionAI := preload("res://scripts/MinionAI.gd")
 const RoleSelectDialogScene := preload("res://scenes/RoleSelectDialog.tscn")
 
 @onready var rts_camera:         Camera3D        = $RTSCamera
-@onready var entity_hud:         Node            = $HUD/HUDOverlay/EntityHUD
+@onready var vignette_rect:      ColorRect       = $HUD/VignetteRect
+
+# Vignette intensity targets — tune these to adjust feel.
+# Shape (radius) is set in assets/vignette.gdshader shader_parameter/radius.
+const VIGNETTE_NORMAL := 0.2  # subtle always-on strength
+const VIGNETTE_ZOOM   := 0.55 # stronger when scoped in
+const VIGNETTE_LERP   := 6.0  # transition speed
 
 var fps_player: CharacterBody3D = null
 
@@ -71,8 +75,8 @@ var fps_player: CharacterBody3D = null
 @onready var reload_prompt:      Label           = $HUD/ReloadPrompt
 @onready var points_label:      Label           = $HUD/PointsPanel/PointsLabel
 @onready var minimap:            Control         = $HUD/MinimapPanel/Minimap
-@onready var health_bar:         ProgressBar     = $HUD/VitalsPanel/VitalsBox/HealthBar
 @onready var stamina_bar:        ProgressBar     = $HUD/VitalsPanel/VitalsBox/StaminaBar
+@onready var health_bar:         ProgressBar     = $HUD/VitalsPanel/VitalsBox/HealthBar
 @onready var audio_mode_switch:  AudioStreamPlayer = $AudioModeSwitch
 @onready var audio_wave:         AudioStreamPlayer = $AudioWave
 @onready var audio_respawn:      AudioStreamPlayer = $AudioRespawn
@@ -88,30 +92,23 @@ var _pause_menu: Control
 var _role_dialog: Control
 
 func _ready() -> void:
-	entity_hud.setup($HUD/HUDOverlay)
-	
 	var _has_network_peer: bool = NetworkManager._peer != null
-	print("[Main] _ready: has_network_peer = ", _has_network_peer)
-	
 	if _has_network_peer:
 		_is_singleplayer = false
-		print("[Main] _ready: _is_singleplayer set to false")
 		_setup_multiplayer_game()
 	else:
 		_is_singleplayer = true
-		print("[Main] _ready: _is_singleplayer set to true")
 		_setup_singleplayer_game()
 		_on_start_game()
+	GraphicsSettings.settings_changed.connect(_apply_fog_settings)
 
 func _setup_singleplayer_game() -> void:
 	_start_menu = StartMenuScene.instantiate()
 	add_child(_start_menu)
-	print("[Main] Connecting start_game signal")
 	_start_menu.connect("start_game", _on_start_game)
 	_start_menu.connect("quit_game", _on_quit_from_menu)
 	_pause_menu = PauseMenuScene.instantiate()
 	$HUD.add_child(_pause_menu)
-	print("[Main] _setup_singleplayer_game: _pause_menu=", _pause_menu, " visible=", _pause_menu.visible)
 	_HUD_set_visible(false)
 	_randomize_time_of_day()
 
@@ -125,7 +122,6 @@ func _setup_multiplayer_game() -> void:
 	_start_multiplayer_game()
 
 func _on_kicked_from_server() -> void:
-	print("[Main] server closed — returning to main menu")
 	get_tree().change_scene_to_file("res://scenes/StartMenu.tscn")
 
 func _spawn_remote_player_manager() -> void:
@@ -245,7 +241,11 @@ func _setup_hud_for_player() -> void:
 	fps_player._update_weapon_label()
 
 func _randomize_time_of_day() -> void:
-	time_seed = randi() % 4
+	if GameSync.time_seed >= 0:
+		time_seed = GameSync.time_seed
+		GameSync.time_seed = -1
+	else:
+		time_seed = randi() % 4
 	var sun := $World/SunLight
 	var world_env := $World/WorldEnvironment
 	
@@ -254,22 +254,44 @@ func _randomize_time_of_day() -> void:
 			sun.light_color = Color(1.0, 0.45, 0.18)
 			sun.light_energy = 0.8
 			sun.rotation_degrees = Vector3(-10, 30, 0)
+			sun.light_volumetric_fog_energy = 2.0
+			sun.shadow_blur = 2.5
 			world_env.environment = load("res://assets/dusk_environment.tres")
 		1: # Noon
 			sun.light_color = Color(1.0, 0.95, 0.85)
 			sun.light_energy = 1.0
 			sun.rotation_degrees = Vector3(-50, 0, 0)
+			sun.light_volumetric_fog_energy = 0.8
+			sun.shadow_blur = 0.8
 			world_env.environment = load("res://assets/day_environment.tres")
 		2: # Sunset
 			sun.light_color = Color(1.0, 0.35, 0.15)
 			sun.light_energy = 0.6
 			sun.rotation_degrees = Vector3(-10, 210, 0)
+			sun.light_volumetric_fog_energy = 2.5
+			sun.shadow_blur = 2.5
 			world_env.environment = load("res://assets/dusk_environment.tres")
 		3: # Night
 			sun.light_color = Color(0.2, 0.35, 1.0)
 			sun.light_energy = 0.25
 			sun.rotation_degrees = Vector3(-70, 180, 0)
+			sun.light_volumetric_fog_energy = 0.05
+			sun.shadow_blur = 3.0
 			world_env.environment = load("res://assets/night_environment.tres")
+	_apply_fog_settings()
+
+func _apply_fog_settings() -> void:
+	var world_env := $World/WorldEnvironment
+	if world_env == null or world_env.environment == null:
+		return
+	var env: Environment = world_env.environment
+	# Fog enabled only when in FPS mode AND GraphicsSettings allows it
+	var want_fog: bool = _is_fps_mode and GraphicsSettings.fog_enabled
+	env.fog_enabled = want_fog
+	env.volumetric_fog_enabled = want_fog
+	if want_fog:
+		env.fog_density = GraphicsSettings.get_fog_density(time_seed)
+		env.volumetric_fog_density = GraphicsSettings.get_vol_fog_density(time_seed)
 
 func _pick_minion_characters() -> void:
 	var shuffled := CHARACTER_LETTERS.duplicate()
@@ -301,13 +323,6 @@ func _process(delta: float) -> void:
 			_do_respawn()
 		else:
 			respawn_label.text = "Respawning in %d..." % (int(_respawn_timer) + 1)
-	if entity_hud and entity_hud.has_method("process_entity_hud"):
-		var cam: Camera3D
-		var crosshair_pos: Vector2
-		if fps_player and fps_player.has_node("Camera3D"):
-			cam = fps_player.get_node("Camera3D") if fps_mode else rts_camera
-			crosshair_pos = get_viewport().get_visible_rect().size * 0.5 if fps_mode else Vector2(-1, -1)
-		entity_hud.call("process_entity_hud", delta, cam, crosshair_pos)
 	if fps_player:
 		var player_team_name := "BLUE" if fps_player.player_team == 0 else "RED"
 		var player_pts := TeamData.get_points(fps_player.player_team)
@@ -324,6 +339,15 @@ func _process(delta: float) -> void:
 			completed_respawns.append(pos)
 	for pos in completed_respawns:
 		_pending_respawns.erase(pos)
+	# Vignette intensity — tracks zoom state of the FPS camera.
+	if vignette_rect.visible and fps_player and fps_player.has_node("Camera3D"):
+		var cam: Camera3D = fps_player.get_node("Camera3D")
+		var zoomed: bool = cam.fov < 52.5
+		var target_intensity: float = VIGNETTE_ZOOM if zoomed else VIGNETTE_NORMAL
+		var mat: ShaderMaterial = vignette_rect.material as ShaderMaterial
+		if mat:
+			var current: float = mat.get_shader_parameter("intensity")
+			mat.set_shader_parameter("intensity", lerp(current, target_intensity, VIGNETTE_LERP * delta))
 
 func _get_terrain_height(pos: Vector3) -> float:
 	var world_3d: World3D = get_tree().root.get_world_3d()
@@ -350,7 +374,6 @@ func _setup_bases() -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
-		print("[Main] _input: keycode=", event.keycode, " game_state=", game_state, " _is_singleplayer=", _is_singleplayer)
 		if event.keycode == KEY_ESCAPE or event.physical_keycode == KEY_ESCAPE:
 			match game_state:
 				GameState.MENU:
@@ -369,8 +392,6 @@ func _input(event: InputEvent) -> void:
 				audio_mode_switch.play()
 
 func _on_start_game() -> void:
-	print("[Main] _on_start_game: game_state=", game_state, " _is_singleplayer=", _is_singleplayer)
-
 	# Show loading screen immediately — TreePlacer/WallPlacer are still pending
 	# (they await 2 process frames before running)
 	var loading_screen = LoadingScreenScene.instantiate()
@@ -498,7 +519,6 @@ func leave_game() -> void:
 	get_tree().change_scene_to_file("res://scenes/StartMenu.tscn")
 
 func toggle_pause(paused: bool) -> void:
-	print("[Main] toggle_pause: paused=", paused, " _is_singleplayer=", _is_singleplayer, " _pause_menu=", _pause_menu)
 	if paused:
 		game_state = GameState.PAUSED
 		_pause_menu.visible = true
@@ -551,13 +571,13 @@ func _set_mode(is_fps: bool) -> void:
 	rts_camera.current  = !is_fps
 	crosshair.visible   = is_fps
 	minimap.visible     = is_fps
+	vignette_rect.visible = is_fps
 	ammo_label.visible  = is_fps
 	vitals_panel.visible = is_fps
 	if not is_fps and reload_prompt:
 		reload_prompt.visible = false
-	var world_env := $World/WorldEnvironment
-	if world_env and world_env.environment:
-		world_env.environment.fog_enabled = is_fps
+	_is_fps_mode = is_fps
+	_apply_fog_settings()
 	if is_fps:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	else:
@@ -595,7 +615,7 @@ func _on_player_died() -> void:
 	var respawn_time: float
 	if _is_singleplayer:
 		_death_count += 1
-		respawn_time = min(RESPAWN_BASE + (_death_count * RESPAWN_INCREMENT), 60.0)
+		respawn_time = min(LobbyManager.RESPAWN_BASE + (_death_count * LobbyManager.RESPAWN_INCREMENT), LobbyManager.RESPAWN_CAP)
 	else:
 		var my_id := multiplayer.get_unique_id()
 		respawn_time = LobbyManager.get_respawn_time(my_id)
