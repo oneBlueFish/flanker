@@ -162,6 +162,12 @@ func sync_death_count(peer_id: int, count: int) -> void:
 	player_death_counts[peer_id] = count
 
 @rpc("any_peer", "reliable")
+func register_player_team(peer_id: int, team: int) -> void:
+	if not multiplayer.is_server():
+		return
+	GameSync.set_player_team(peer_id, team)
+
+@rpc("any_peer", "reliable")
 func request_start_game() -> void:
 	var id := _sender_id()
 	if id != host_id:

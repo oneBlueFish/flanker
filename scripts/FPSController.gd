@@ -137,6 +137,8 @@ func _ready() -> void:
 		GameSync.player_died.connect(_on_game_sync_died)
 		GameSync.player_respawned.connect(_on_game_sync_respawned)
 		GameSync.player_health_changed.connect(_on_game_sync_health_changed)
+		if _has_network_peer and not multiplayer.is_server():
+			LobbyManager.register_player_team.rpc_id(1, _peer_id, player_team)
 	
 	_load_default_weapon()
 	_refresh_viewmodel()
@@ -277,6 +279,8 @@ func respawn(spawn_pos: Vector3) -> void:
 		reload_bar.visible = false
 	if reload_prompt:
 		reload_prompt.visible = false
+	col_shape.disabled = false
+	$PlayerBody.visible = true
 
 func pick_up_weapon(w: WeaponData) -> void:
 	# Check if we already have this weapon type in any slot — top up ammo
@@ -307,6 +311,8 @@ func _on_death() -> void:
 	_dead         = true
 	active        = false
 	camera.current = false
+	col_shape.disabled = true
+	$PlayerBody.visible = false
 	emit_signal("died")
 
 func _update_health_bar() -> void:

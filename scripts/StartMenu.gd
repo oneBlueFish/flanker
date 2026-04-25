@@ -104,7 +104,7 @@ func _build_overlay(
 		var edit := LineEdit.new()
 		edit.name = edit_names[i]
 		edit.placeholder_text = placeholders[i]
-		if placeholders[i] != "" and not placeholders[i].contains("."):
+		if placeholders[i] != "":
 			edit.text = placeholders[i]
 		edit.custom_minimum_size = Vector2(320, 38)
 		edit.theme = ui_theme
