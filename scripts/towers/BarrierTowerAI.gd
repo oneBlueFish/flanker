@@ -34,6 +34,8 @@ func _setup_collision() -> void:
 	add_child(col)
 
 func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
+	if not multiplayer.is_server():
+		return
 	if _dead:
 		return
 	health -= amount
@@ -42,4 +44,7 @@ func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void
 
 func _die() -> void:
 	_dead = true
-	queue_free()
+	if multiplayer.has_multiplayer_peer():
+		LobbyManager.despawn_tower.rpc(name)
+	else:
+		queue_free()

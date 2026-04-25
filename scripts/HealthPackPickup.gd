@@ -55,8 +55,13 @@ func _build_visuals() -> void:
 func _on_body_entered(body: Node3D) -> void:
 	if not body.has_method("heal"):
 		return
+	# Only the local player's controller triggers pickup — prevents double-fire
+	# on server (which has CharacterBody3D for all players) and ignores ghosts.
+	var is_local: bool = body.get("_is_local") == true
+	if not is_local:
+		return
 	if team != -1:
-		var body_team := -1
+		var body_team: int = -1
 		var pt = body.get("player_team")
 		if pt != null:
 			body_team = pt as int
@@ -67,8 +72,11 @@ func _on_body_entered(body: Node3D) -> void:
 		if body_team != team:
 			return
 	body.heal(HEAL_AMOUNT)
-	# Sync despawn across all peers; fall back to local queue_free in singleplayer
 	if multiplayer.has_multiplayer_peer():
-		LobbyManager.notify_drop_picked_up.rpc_id(1, name)
+		if multiplayer.is_server():
+			# rpc_id(1,...) from the server to itself is a no-op — call directly
+			LobbyManager.despawn_drop.rpc(name)
+		else:
+			LobbyManager.notify_drop_picked_up.rpc_id(1, name)
 	else:
 		queue_free()

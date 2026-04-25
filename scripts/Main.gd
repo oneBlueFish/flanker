@@ -175,13 +175,12 @@ func _start_multiplayer_game() -> void:
 	# Send claim to server — server validates and broadcasts
 	if multiplayer.is_server():
 		LobbyManager.set_role_ingame(selected_role)
+		# Server fires _sync_role_slots synchronously — no await needed
 	else:
 		LobbyManager.set_role_ingame.rpc_id(1, selected_role)
-
-	# Wait for server to respond with sync (or rejection)
-	# If rejected, role_slots_updated fires and dialog re-enables — but we already
-	# awaited the first click. Check if supporter was actually granted.
-	await get_tree().process_frame
+		# Wait for server's _sync_role_slots RPC to arrive before reading result.
+		# One process frame is not enough — RTT can be >16ms.
+		await LobbyManager.role_slots_updated
 
 	LobbyManager.role_slots_updated.disconnect(_role_dialog.on_slots_updated)
 	_role_dialog.visible = false
@@ -189,9 +188,11 @@ func _start_multiplayer_game() -> void:
 	# Verify we actually got the role (supporter could have been rejected)
 	var granted_supporter: bool = LobbyManager.supporter_claimed.get(player_start_team, false)
 	if selected_role == Role.SUPPORTER and not granted_supporter:
-		# Rejected — re-show dialog with supporter grayed out, wait again
+		# Rejected — re-show dialog with supporter grayed out, wait again.
+		# Don't reconnect role_slots_updated — state is already current and
+		# reconnecting would disable the button the moment the server confirms
+		# a future grant (which would misread as "taken by someone else").
 		_role_dialog.set_slots_from_network(LobbyManager.supporter_claimed, player_start_team)
-		LobbyManager.role_slots_updated.connect(_role_dialog.on_slots_updated)
 		_role_dialog.visible = true
 		selected_role = await _role_dialog.role_selected
 		# Fighter is always available — send final claim
@@ -199,8 +200,7 @@ func _start_multiplayer_game() -> void:
 			LobbyManager.set_role_ingame(selected_role)
 		else:
 			LobbyManager.set_role_ingame.rpc_id(1, selected_role)
-		await get_tree().process_frame
-		LobbyManager.role_slots_updated.disconnect(_role_dialog.on_slots_updated)
+			await LobbyManager.role_slots_updated
 		_role_dialog.visible = false
 
 	player_role = selected_role as Role

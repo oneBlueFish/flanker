@@ -464,6 +464,16 @@ func despawn_drop(node_name: String) -> void:
 	if node != null:
 		node.queue_free()
 
+# Called by server when a tower or heal station dies — removes it on all peers.
+@rpc("authority", "call_local", "reliable")
+func despawn_tower(node_name: String) -> void:
+	var main: Node = get_tree().root.get_node_or_null("Main")
+	if main == null:
+		return
+	var node: Node = main.get_node_or_null(node_name)
+	if node != null:
+		node.queue_free()
+
 # ── TeamData sync ─────────────────────────────────────────────────────────────
 
 @rpc("authority", "call_remote", "reliable")

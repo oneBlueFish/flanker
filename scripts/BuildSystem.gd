@@ -124,11 +124,19 @@ func spawn_item_local(world_pos: Vector3, team: int, item_type: String, subtype:
 		if wd != null:
 			node.set("weapon_data", wd)
 
-	# Assign deterministic names to interactive drops so all peers can despawn by name
+	# Assign deterministic names so all peers can despawn by name
 	if item_type in ["healthpack", "weapon"]:
 		var sx: int = int(world_pos.x)
 		var sz: int = int(world_pos.z)
 		node.name = "Drop_%s_%d_%d" % [item_type, sx, sz]
+	elif item_type in ["cannon", "mortar", "slow", "barrier"]:
+		var sx: int = int(world_pos.x)
+		var sz: int = int(world_pos.z)
+		node.name = "Tower_%s_%d_%d" % [item_type, sx, sz]
+	elif item_type == "healstation":
+		var sx: int = int(world_pos.x)
+		var sz: int = int(world_pos.z)
+		node.name = "HealStation_%d_%d" % [sx, sz]
 
 	var main: Node = get_tree().root.get_node("Main")
 	main.add_child(node)
