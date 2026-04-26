@@ -6,8 +6,8 @@ var team_points: Array = []
 
 func _ready() -> void:
 	team_points.resize(TEAM_COUNT)
-	team_points[0] = 0
-	team_points[1] = 0
+	team_points[0] = 75
+	team_points[1] = 75
 
 func add_points(team: int, amount: int) -> void:
 	if team >= 0 and team < TEAM_COUNT:
@@ -23,3 +23,7 @@ func spend_points(team: int, amount: int) -> bool:
 		team_points[team] -= amount
 		return true
 	return false
+
+func sync_from_server(blue: int, red: int) -> void:
+	team_points[0] = blue
+	team_points[1] = red

@@ -56,9 +56,6 @@ func close_connection() -> void:
 		multiplayer.multiplayer_peer = null
 	_is_host = false
 
-func get_peer_address(peer_id: int) -> String:
-	return ""
-
 func _on_peer_connected(id: int) -> void:
 	var addr := ""
 	if _peer and _peer.get_peer(id):

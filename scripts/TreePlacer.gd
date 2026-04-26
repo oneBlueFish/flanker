@@ -24,7 +24,7 @@ const RED_BASE_CENTER := Vector3(0.0, 0.0, -82.0)
 const TREE_SCALE_MIN := 3
 const TREE_SCALE_MAX := 5
 
-const TREE_DENSITY := .1
+const TREE_DENSITY := .07
 
 const CLEARING_CHANCE := 0.1
 const CLEARING_MIN_RADIUS := 8.0
@@ -147,6 +147,7 @@ func _add_tree_collision(world_pos: Vector3, scale: float) -> void:
 	collision.position = world_pos
 	collision.collision_layer = 2
 	collision.collision_mask = 1
+	collision.set_meta("tree_trunk_height", trunk_height)
 
 	add_child(collision)
 
@@ -246,3 +247,11 @@ func _is_in_random_clearing(pos: Vector3) -> bool:
 		if pos2.distance_to(_random_clearing_centers[i]) < _random_clearing_radii[i]:
 			return true
 	return false
+
+# Remove all tree nodes and their collision bodies within radius of world_pos (XZ).
+func clear_trees_at(world_pos: Vector3, radius: float) -> void:
+	var center := Vector2(world_pos.x, world_pos.z)
+	for child in get_children():
+		var child_pos := Vector2(child.position.x, child.position.z)
+		if child_pos.distance_to(center) <= radius:
+			child.queue_free()

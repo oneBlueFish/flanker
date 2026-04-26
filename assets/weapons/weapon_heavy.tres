@@ -6,10 +6,11 @@
 script = ExtResource("1")
 weapon_name = "Heavy Blaster"
 damage = 70.0
-bullet_speed = 200.0
+bullet_speed = 140.0
 fire_rate = 0.6
 reload_time = 3.0
 magazine_size = 6
 reserve_ammo = 24
 mesh_path = "res://assets/kenney_blaster-kit/Models/GLB format/blaster-k.glb"
 fire_sound_path = "res://assets/kenney_sci-fi-sounds/Audio/laserRetro_000.ogg"
+glow_color = Color(1.0, 0.5, 0.0, 1.0)

@@ -7,6 +7,7 @@ extends Node
 const BLUE_BASE := Vector2(0.0, 82.0)   # z positive = south
 const RED_BASE  := Vector2(0.0, -82.0)  # z negative = north
 const SAMPLE_COUNT := 40  # points per lane curve
+const LANE_FLATTEN := 50  # max perturbation for control points
 
 # Cubic Bézier control points [P0, P1, P2, P3] in XZ (Vector2)
 # Lane 0 = Left, Lane 1 = Mid, Lane 2 = Right
@@ -22,11 +23,32 @@ const LANE_CONTROLS := [
 # Cache
 var _lane_points: Array = []  # Array of Array[Vector2]
 var _secret_paths: Array = []  # Array of Array[Vector2]
+var _generated: bool = false
 
 func _ready() -> void:
+	pass  # lazy generation on first access
+
+func regenerate_for_new_game() -> void:
+	_generated = false
+	_lane_points.clear()
+	_generate_if_needed()
+
+func _generate_if_needed() -> void:
+	if _generated:
+		return
+	_generated = true
 	for i in range(3):
 		var ctrl: Array = LANE_CONTROLS[i]
-		_lane_points.append(_sample_bezier(ctrl[0], ctrl[1], ctrl[2], ctrl[3], SAMPLE_COUNT))
+		seed(GameSync.game_seed + 100 * (i + 1))
+		var p1_offset := Vector2(randf_range(-LANE_FLATTEN, LANE_FLATTEN), randf_range(-LANE_FLATTEN, LANE_FLATTEN))
+		var p2_offset := Vector2(randf_range(-LANE_FLATTEN, LANE_FLATTEN), randf_range(-LANE_FLATTEN, LANE_FLATTEN))
+		var perturbed: Array[Vector2] = [
+			ctrl[0],  # P0 fixed
+			ctrl[1] + p1_offset,
+			ctrl[2] + p2_offset,
+			ctrl[3],  # P3 fixed
+		]
+		_lane_points.append(_sample_bezier(perturbed[0], perturbed[1], perturbed[2], perturbed[3], SAMPLE_COUNT))
 
 # Called by Main.gd after terrain generates secret paths
 func set_secret_paths(paths: Array) -> void:
@@ -34,6 +56,7 @@ func set_secret_paths(paths: Array) -> void:
 
 # Returns Array[Vector2] of XZ world positions along lane (blue→red direction)
 func get_lane_points(lane_i: int) -> Array:
+	_generate_if_needed()
 	return _lane_points[lane_i]
 
 # Returns secret path points for path_index (0-5), or empty array if invalid
@@ -44,6 +67,7 @@ func get_secret_path_points(path_index: int) -> Array:
 
 # Returns all secret path points flattened
 func get_all_secret_path_points() -> Array:
+	_generate_if_needed()
 	var all: Array = []
 	for path in _secret_paths:
 		all.append_array(path)
@@ -65,6 +89,7 @@ func get_lane_waypoints(lane_i: int, team: int) -> Array[Vector3]:
 
 # Returns all lane points flattened into one Array[Vector2] for terrain use
 func get_all_lane_points() -> Array:
+	_generate_if_needed()
 	var all: Array = []
 	for lane in _lane_points:
 		all.append_array(lane)

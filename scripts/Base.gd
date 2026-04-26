@@ -38,7 +38,7 @@ func _die() -> void:
 	if _dead:
 		return
 	_dead = true
-	var winner := "RED" if team == 0 else "BLUE"
+	var winner := "BLUE" if team == 0 else "RED"
 	print("GAME OVER — %s WINS" % winner)
 	var main := get_node_or_null("/root/Main")
 	if main and main.has_method("game_over_signal"):

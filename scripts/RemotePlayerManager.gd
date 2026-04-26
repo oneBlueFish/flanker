@@ -9,6 +9,8 @@ func _ready() -> void:
 	_local_peer_id = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
 	GameSync.remote_player_updated.connect(_on_remote_player_updated)
 	LobbyManager.player_left.connect(remove_ghost)
+	GameSync.player_died.connect(_on_player_died)
+	GameSync.player_respawned.connect(_on_player_respawned)
 
 func _on_remote_player_updated(peer_id: int, pos: Vector3, rot: Vector3, _team: int) -> void:
 	# Don't create ghost for local player
@@ -32,3 +34,23 @@ func remove_ghost(peer_id: int) -> void:
 		if is_instance_valid(g):
 			g.queue_free()
 		_ghosts.erase(peer_id)
+
+func _on_player_died(peer_id: int) -> void:
+	if _ghosts.has(peer_id):
+		var g: Node3D = _ghosts[peer_id]
+		if is_instance_valid(g):
+			g.visible = false
+			var hit_body: StaticBody3D = g.get_node_or_null("HitBody")
+			if hit_body != null:
+				hit_body.set_collision_layer(0)
+				hit_body.set_collision_mask(0)
+
+func _on_player_respawned(peer_id: int, _spawn_pos: Vector3) -> void:
+	if _ghosts.has(peer_id):
+		var g: Node3D = _ghosts[peer_id]
+		if is_instance_valid(g):
+			g.visible = true
+			var hit_body: StaticBody3D = g.get_node_or_null("HitBody")
+			if hit_body != null:
+				hit_body.set_collision_layer(1)
+				hit_body.set_collision_mask(0)

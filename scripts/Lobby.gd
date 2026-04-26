@@ -1,28 +1,35 @@
 extends Control
 
 var _my_peer_id: int = 1
-var _my_team: int = 0
-var _my_role: String = ""
 var _my_ready: bool = false
 var _is_host: bool = false
-var _role_buttons: Array = []
 
-# Built in _ready — no scene tree deps
-var _blue_list: VBoxContainer
-var _red_list: VBoxContainer
+var _player_list: VBoxContainer
 var _status_label: Label
-var _role_btn: Button
+var _player_count_label: Label
+var _seed_label: Label
 var _ready_btn: Button
 var _start_btn: Button
-var _role_dialog: AcceptDialog
-var _role_list: VBoxContainer
+
+# Settings overlay (host only)
+var _settings_overlay: Control
+var _settings_seed_edit: LineEdit
+var _settings_time_buttons: Array[Button] = []
+var _settings_time_idx: int = 0
+
+const TIME_OPTIONS := ["RANDOM", "SUNRISE", "NOON", "SUNSET", "NIGHT"]
+const TIME_VALUES  := [-1, 0, 1, 2, 3]
+
+const BG_COLOR     := Color(0.04, 0.05, 0.06, 0.92)
+const BORDER_COLOR := Color(0.85, 0.32, 0.05, 0.6)
+const TITLE_COLOR  := Color(1.0, 0.35, 0.1, 1.0)
+const LABEL_COLOR  := Color(0.55, 0.45, 0.35, 1.0)
 
 func _ready() -> void:
 	_my_peer_id = multiplayer.get_unique_id()
 	_is_host = NetworkManager.is_host()
 
 	_build_ui()
-	_build_role_dialog()
 
 	LobbyManager.lobby_updated.connect(_on_lobby_updated)
 	LobbyManager.game_start_requested.connect(_on_game_start_requested)
@@ -32,142 +39,101 @@ func _ready() -> void:
 func _build_ui() -> void:
 	var ui_theme: Theme = load("res://assets/ui_theme.tres")
 
-	# Background
+	# Full-rect dark backdrop
 	var bg := ColorRect.new()
-	bg.color = Color(0.05, 0.05, 0.05, 0.95)
+	bg.color = Color(0.0, 0.0, 0.0, 0.72)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
-	# Centered VBox
+	# CenterContainer fills screen, centers the card
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(center)
+
+	# Card panel — sized to content
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(480, 0)
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.05, 0.06, 0.92)
+	style.border_width_left = 2
+	style.border_color = Color(0.85, 0.32, 0.05, 0.6)
+	style.content_margin_left   = 32
+	style.content_margin_right  = 32
+	style.content_margin_top    = 32
+	style.content_margin_bottom = 32
+	panel.add_theme_stylebox_override("panel", style)
+	center.add_child(panel)
+
 	var vbox := VBoxContainer.new()
-	vbox.set_anchor_and_offset(SIDE_LEFT,   0.5, -450)
-	vbox.set_anchor_and_offset(SIDE_RIGHT,  0.5,  450)
-	vbox.set_anchor_and_offset(SIDE_TOP,    0.5, -300)
-	vbox.set_anchor_and_offset(SIDE_BOTTOM, 0.5,  300)
-	vbox.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	vbox.grow_vertical   = Control.GROW_DIRECTION_BOTH
-	add_child(vbox)
+	vbox.add_theme_constant_override("separation", 12)
+	panel.add_child(vbox)
 
 	# Title
 	var title := Label.new()
 	title.text = "LOBBY"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_color", Color(1.0, 0.35, 0.1, 1))
-	title.add_theme_font_size_override("font_size", 60)
+	title.add_theme_color_override("font_color", Color(1.0, 0.35, 0.1, 1.0))
+	title.add_theme_font_size_override("font_size", 56)
 	vbox.add_child(title)
 
-	# Connection info
-	var info := Label.new()
-	info.text = "Share your IP and port with friends"
-	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1))
-	vbox.add_child(info)
+	# Player count
+	_player_count_label = Label.new()
+	_player_count_label.text = "0 / 10 PLAYERS"
+	_player_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_player_count_label.add_theme_color_override("font_color", Color(0.55, 0.45, 0.35, 1.0))
+	_player_count_label.add_theme_font_size_override("font_size", 13)
+	vbox.add_child(_player_count_label)
 
-	# Teams row
-	var teams := HBoxContainer.new()
-	teams.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	teams.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_child(teams)
-
-	# Blue team column
-	var blue_col := VBoxContainer.new()
-	blue_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	blue_col.alignment = BoxContainer.ALIGNMENT_BEGIN
-	teams.add_child(blue_col)
-
-	var blue_hdr := Label.new()
-	blue_hdr.text = "BLUE TEAM"
-	blue_hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	blue_hdr.add_theme_color_override("font_color", Color(0.3, 0.5, 1.0, 1))
-	blue_hdr.add_theme_font_size_override("font_size", 24)
-	blue_col.add_child(blue_hdr)
-
-	_blue_list = VBoxContainer.new()
-	_blue_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	blue_col.add_child(_blue_list)
+	# Seed
+	_seed_label = Label.new()
+	_seed_label.text = "SEED  —"
+	_seed_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_seed_label.add_theme_color_override("font_color", Color(0.35, 0.30, 0.25, 1.0))
+	_seed_label.add_theme_font_size_override("font_size", 11)
+	vbox.add_child(_seed_label)
 
 	# Separator
-	var sep := Control.new()
-	sep.custom_minimum_size = Vector2(20, 0)
-	teams.add_child(sep)
+	var sep_top := HSeparator.new()
+	vbox.add_child(sep_top)
 
-	# Red team column
-	var red_col := VBoxContainer.new()
-	red_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	red_col.alignment = BoxContainer.ALIGNMENT_BEGIN
-	teams.add_child(red_col)
+	# Player list
+	_player_list = VBoxContainer.new()
+	_player_list.add_theme_constant_override("separation", 6)
+	_player_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(_player_list)
 
-	var red_hdr := Label.new()
-	red_hdr.text = "RED TEAM"
-	red_hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	red_hdr.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3, 1))
-	red_hdr.add_theme_font_size_override("font_size", 24)
-	red_col.add_child(red_hdr)
-
-	_red_list = VBoxContainer.new()
-	_red_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	red_col.add_child(_red_list)
-
-	# Horizontal separator
+	# Separator
 	vbox.add_child(HSeparator.new())
 
 	# Action buttons row
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	actions.add_theme_constant_override("separation", 12)
 	vbox.add_child(actions)
 
-	var spacer_l := Control.new()
-	spacer_l.custom_minimum_size = Vector2(100, 0)
-	actions.add_child(spacer_l)
-
-	var switch_btn := Button.new()
-	switch_btn.text = "Switch Team"
-	switch_btn.custom_minimum_size = Vector2(140, 40)
-	switch_btn.theme = ui_theme
-	switch_btn.pressed.connect(_on_switch_team_pressed)
-	actions.add_child(switch_btn)
-
-	var spacer_r := Control.new()
-	spacer_r.custom_minimum_size = Vector2(20, 0)
-	actions.add_child(spacer_r)
-
-	_role_btn = Button.new()
-	_role_btn.text = "Select Role"
-	_role_btn.custom_minimum_size = Vector2(160, 40)
-	_role_btn.theme = ui_theme
-	_role_btn.pressed.connect(_on_role_pressed)
-	actions.add_child(_role_btn)
-
-	var spacer_r2 := Control.new()
-	spacer_r2.custom_minimum_size = Vector2(20, 0)
-	actions.add_child(spacer_r2)
-
 	_ready_btn = Button.new()
-	_ready_btn.text = "Ready"
-	_ready_btn.custom_minimum_size = Vector2(120, 40)
+	_ready_btn.text = "READY"
+	_ready_btn.custom_minimum_size = Vector2(140, 44)
 	_ready_btn.theme = ui_theme
 	_ready_btn.pressed.connect(_on_ready_pressed)
 	actions.add_child(_ready_btn)
 
-	var spacer_r3 := Control.new()
-	spacer_r3.custom_minimum_size = Vector2(60, 0)
-	actions.add_child(spacer_r3)
+	if _is_host:
+		_start_btn = Button.new()
+		_start_btn.text = "START WAR"
+		_start_btn.custom_minimum_size = Vector2(160, 50)
+		_start_btn.theme = ui_theme
+		_start_btn.pressed.connect(_on_start_pressed)
+		actions.add_child(_start_btn)
 
-	_start_btn = Button.new()
-	_start_btn.text = "Start War"
-	_start_btn.custom_minimum_size = Vector2(160, 50)
-	_start_btn.theme = ui_theme
-	_start_btn.visible = _is_host
-	_start_btn.pressed.connect(_on_start_pressed)
-	actions.add_child(_start_btn)
-
-	var spacer_l2 := Control.new()
-	spacer_l2.custom_minimum_size = Vector2(20, 0)
-	actions.add_child(spacer_l2)
+		# Build settings overlay now (while in tree with correct size)
+		_settings_overlay = _build_settings_overlay(ui_theme)
+		add_child(_settings_overlay)
 
 	var leave_btn := Button.new()
-	leave_btn.text = "Leave"
-	leave_btn.custom_minimum_size = Vector2(120, 40)
+	leave_btn.text = "LEAVE"
+	leave_btn.custom_minimum_size = Vector2(120, 44)
 	leave_btn.theme = ui_theme
 	leave_btn.pressed.connect(_on_leave_pressed)
 	actions.add_child(leave_btn)
@@ -176,159 +142,226 @@ func _build_ui() -> void:
 	_status_label = Label.new()
 	_status_label.text = "Waiting for players..."
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6, 1))
+	_status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6, 1.0))
+	_status_label.add_theme_font_size_override("font_size", 12)
 	vbox.add_child(_status_label)
-
-func _build_role_dialog() -> void:
-	var ui_theme: Theme = load("res://assets/ui_theme.tres")
-	_role_dialog = AcceptDialog.new()
-	_role_dialog.title = "Select Role"
-	_role_dialog.size = Vector2i(300, 350)
-	_role_dialog.unresizable = true
-	_role_dialog.ok_button_text = "Confirm"
-	_role_dialog.dialog_hide_on_ok = false
-	_role_dialog.visible = false
-	add_child(_role_dialog)
-
-	_role_list = VBoxContainer.new()
-	_role_dialog.add_child(_role_list)
-
-	_role_buttons.clear()
-	for role in LobbyManager.ROLES:
-		var btn := Button.new()
-		btn.text = role
-		btn.theme = ui_theme
-		btn.pressed.connect(_on_role_button_pressed.bind(role))
-		_role_list.add_child(btn)
-		_role_buttons.append(btn)
-
-func _on_role_button_pressed(role: String) -> void:
-	_my_role = role
-	if multiplayer.is_server():
-		LobbyManager.set_role(role)
-	else:
-		LobbyManager.set_role.rpc_id(1, role)
-	_role_dialog.hide()
-	_update_role_buttons()
 
 func _on_lobby_updated() -> void:
 	_refresh_player_list()
 	_update_my_status()
 	_check_can_start()
+	_update_seed_label()
+
+func _update_seed_label() -> void:
+	if not _seed_label:
+		return
+	var seed_val: int = GameSync.game_seed
+	if seed_val == 0:
+		_seed_label.text = "SEED  —"
+	else:
+		_seed_label.text = "SEED  #%d" % seed_val
 
 func _refresh_player_list() -> void:
-	if not _blue_list or not _red_list:
+	if not _player_list:
 		return
 
-	for child in _blue_list.get_children():
+	for child in _player_list.get_children():
 		child.queue_free()
-	for child in _red_list.get_children():
-		child.queue_free()
-
-	var blue_players: Array = []
-	var red_players: Array = []
 
 	for id in LobbyManager.players:
 		var info: Dictionary = LobbyManager.players[id]
-		var entry := _make_player_entry(id, info)
-		if info.team == 0:
-			blue_players.append(entry)
-		else:
-			red_players.append(entry)
-
-	for entry in blue_players:
-		_blue_list.add_child(entry)
-	for entry in red_players:
-		_red_list.add_child(entry)
-
-	_ensure_empty_slots(_blue_list, 5)
-	_ensure_empty_slots(_red_list, 5)
+		_player_list.add_child(_make_player_entry(id, info))
 
 func _make_player_entry(id: int, info: Dictionary) -> HBoxContainer:
-	var container := HBoxContainer.new()
+	var row := HBoxContainer.new()
 
 	var name_lbl := Label.new()
 	name_lbl.text = info.name
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	container.add_child(name_lbl)
-
-	var role_lbl := Label.new()
-	role_lbl.text = info.role if info.role != "" else "—"
-	role_lbl.custom_minimum_size.x = 80.0
-	role_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	container.add_child(role_lbl)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	name_lbl.add_theme_font_size_override("font_size", 15)
+	if id == _my_peer_id:
+		name_lbl.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2, 1.0))
+	else:
+		name_lbl.add_theme_color_override("font_color", Color(0.85, 0.80, 0.75, 1.0))
+	row.add_child(name_lbl)
 
 	var ready_lbl := Label.new()
-	ready_lbl.text = "✓" if info.ready else "○"
-	ready_lbl.custom_minimum_size.x = 30.0
+	ready_lbl.text = "READY" if info.ready else "—"
+	ready_lbl.custom_minimum_size.x = 60.0
+	ready_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ready_lbl.add_theme_font_size_override("font_size", 12)
 	if info.ready:
-		ready_lbl.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3, 1))
+		ready_lbl.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3, 1.0))
 	else:
-		ready_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
-	ready_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	container.add_child(ready_lbl)
+		ready_lbl.add_theme_color_override("font_color", Color(0.35, 0.30, 0.25, 1.0))
+	row.add_child(ready_lbl)
 
-	if id == _my_peer_id:
-		name_lbl.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2, 1))
-
-	return container
-
-func _ensure_empty_slots(list: VBoxContainer, count: int) -> void:
-	var current := list.get_child_count()
-	for i in range(current, count):
-		var empty := Label.new()
-		empty.text = "— Empty —"
-		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		empty.add_theme_color_override("font_color", Color(0.3, 0.3, 0.3, 1))
-		list.add_child(empty)
+	return row
 
 func _update_my_status() -> void:
-	if not _status_label:
+	if not _status_label or not _player_count_label:
 		return
+
+	var player_count: int = LobbyManager.players.size()
+	_player_count_label.text = "%d / 10 PLAYERS" % player_count
+
 	var info: Dictionary = LobbyManager.players.get(_my_peer_id, {})
 
 	if info.is_empty():
 		_status_label.text = "Connecting..."
 		return
 
-	_my_team = info.team
-	_my_role = info.role
 	_my_ready = info.ready
 
-	var parts: Array = []
-	parts.append("Team: %s" % ("BLUE" if _my_team == 0 else "RED"))
-	parts.append(" | Role: %s" % (_my_role if _my_role != "" else "None"))
-	parts.append(" | %s" % ("Ready" if _my_ready else "Not Ready"))
-	parts.append(" | %d/10 players" % LobbyManager.players.size())
-
-	_status_label.text = " ".join(parts)
-	_update_role_buttons()
-
-func _update_role_buttons() -> void:
-	if _role_btn:
-		_role_btn.text = _my_role if _my_role != "" else "Select Role"
+	if _my_ready:
+		_status_label.text = "You are ready."
+		_status_label.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3, 1.0))
+	else:
+		_status_label.text = "Waiting for players..."
+		_status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6, 1.0))
 
 	if _ready_btn:
-		_ready_btn.text = "Not Ready" if _my_ready else "Ready"
-		if _my_ready:
-			_ready_btn.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3, 1))
-		else:
-			_ready_btn.remove_theme_color_override("font_color")
+		_ready_btn.text = "NOT READY" if _my_ready else "READY"
 
 func _check_can_start() -> void:
 	if not _is_host or not _start_btn:
 		return
 	_start_btn.disabled = not LobbyManager.can_start_game()
 
-func _on_switch_team_pressed() -> void:
-	if _is_host:
-		LobbyManager.set_team(1 - _my_team)
-	else:
-		LobbyManager.set_team.rpc_id(1, 1 - _my_team)
+func _build_settings_overlay(ui_theme: Theme) -> Control:
+	var overlay := Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.visible = false
 
-func _on_role_pressed() -> void:
-	_role_dialog.popup_centered()
+	var backdrop := ColorRect.new()
+	backdrop.color = Color(0.0, 0.0, 0.0, 0.72)
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(backdrop)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(460, 0)
+	var style := StyleBoxFlat.new()
+	style.bg_color = BG_COLOR
+	style.border_width_left = 2
+	style.border_color = BORDER_COLOR
+	style.content_margin_left   = 32
+	style.content_margin_right  = 32
+	style.content_margin_top    = 32
+	style.content_margin_bottom = 32
+	panel.add_theme_stylebox_override("panel", style)
+	center.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 16)
+	panel.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "GAME SETTINGS"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_color", TITLE_COLOR)
+	title.add_theme_font_size_override("font_size", 32)
+	vbox.add_child(title)
+
+	vbox.add_child(HSeparator.new())
+
+	var time_lbl := Label.new()
+	time_lbl.text = "TIME OF DAY"
+	time_lbl.add_theme_color_override("font_color", LABEL_COLOR)
+	time_lbl.add_theme_font_size_override("font_size", 13)
+	vbox.add_child(time_lbl)
+
+	var time_row := HBoxContainer.new()
+	time_row.add_theme_constant_override("separation", 6)
+	vbox.add_child(time_row)
+
+	_settings_time_buttons.clear()
+	for i in TIME_OPTIONS.size():
+		var btn := Button.new()
+		btn.text = TIME_OPTIONS[i]
+		btn.custom_minimum_size = Vector2(74, 38)
+		btn.theme = ui_theme
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var idx := i
+		btn.pressed.connect(func() -> void: _settings_select_time(idx))
+		time_row.add_child(btn)
+		_settings_time_buttons.append(btn)
+	_settings_select_time(0)
+
+	vbox.add_child(HSeparator.new())
+
+	var seed_lbl := Label.new()
+	seed_lbl.text = "MAP SEED"
+	seed_lbl.add_theme_color_override("font_color", LABEL_COLOR)
+	seed_lbl.add_theme_font_size_override("font_size", 13)
+	vbox.add_child(seed_lbl)
+
+	var seed_row := HBoxContainer.new()
+	seed_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(seed_row)
+
+	_settings_seed_edit = LineEdit.new()
+	_settings_seed_edit.text = str(randi_range(1, 2147483647))
+	_settings_seed_edit.custom_minimum_size = Vector2(0, 38)
+	_settings_seed_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_settings_seed_edit.theme = ui_theme
+	seed_row.add_child(_settings_seed_edit)
+
+	var rand_btn := Button.new()
+	rand_btn.text = "RANDOMIZE"
+	rand_btn.custom_minimum_size = Vector2(120, 38)
+	rand_btn.theme = ui_theme
+	rand_btn.pressed.connect(func() -> void:
+		_settings_seed_edit.text = str(randi_range(1, 2147483647))
+	)
+	seed_row.add_child(rand_btn)
+
+	vbox.add_child(HSeparator.new())
+
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(btn_row)
+
+	var start_btn := Button.new()
+	start_btn.text = "START WAR"
+	start_btn.custom_minimum_size = Vector2(150, 48)
+	start_btn.theme = ui_theme
+	start_btn.pressed.connect(_on_settings_confirmed)
+	btn_row.add_child(start_btn)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "CANCEL"
+	cancel_btn.custom_minimum_size = Vector2(120, 48)
+	cancel_btn.theme = ui_theme
+	cancel_btn.pressed.connect(func() -> void: overlay.visible = false)
+	btn_row.add_child(cancel_btn)
+
+	return overlay
+
+func _settings_select_time(idx: int) -> void:
+	_settings_time_idx = idx
+	for i in _settings_time_buttons.size():
+		var btn: Button = _settings_time_buttons[i]
+		btn.modulate = Color(1.0, 0.75, 0.3, 1.0) if i == idx else Color(1.0, 1.0, 1.0, 1.0)
+
+func _on_settings_confirmed() -> void:
+	_settings_overlay.visible = false
+	var raw: String = _settings_seed_edit.text.strip_edges()
+	var map_seed: int
+	if raw.is_valid_int():
+		map_seed = raw.to_int()
+		if map_seed <= 0:
+			map_seed = randi_range(1, 2147483647)
+	else:
+		map_seed = randi_range(1, 2147483647)
+	var chosen_time: int = TIME_VALUES[_settings_time_idx]
+	LobbyManager.start_game("res://scenes/Main.tscn", map_seed, chosen_time)
 
 func _on_ready_pressed() -> void:
 	if _is_host:
@@ -339,7 +372,9 @@ func _on_ready_pressed() -> void:
 func _on_start_pressed() -> void:
 	if not _is_host:
 		return
-	LobbyManager.start_game("res://scenes/Main.tscn")
+	_settings_seed_edit.text = str(randi_range(1, 2147483647))
+	_settings_select_time(0)
+	_settings_overlay.visible = true
 
 func _on_game_start_requested() -> void:
 	queue_free()

@@ -1,67 +1,53 @@
 extends StaticBody3D
 
-const BULLET_SPEED := 84.0
-const BulletScene := preload("res://scenes/Bullet.tscn")
+const BulletScene := preload("res://scenes/Cannonball.tscn")
 
 var team := 0  # which team OWNS this tower (attacks enemies)
-var health := 300.0
-const MAX_HEALTH := 300.0
-var attack_range := 15.0
+var health := 900.0
+const MAX_HEALTH := 900.0
+var attack_range := 30.0
 var attack_damage := 50.0
 var attack_cooldown := 1.0
 var _attack_timer := 0.0
 var _dead := false
 var _team_mat: StandardMaterial3D = null
+var mesh: MeshInstance3D = null
 
-var hud_id := -1
-
-@onready var mesh: MeshInstance3D = $MeshInstance3D
 @onready var area: Area3D = $Area3D
-@onready var debug_collision: StaticBody3D = $DebugCollision
 
-const TOWER_MODEL_PATH := "res://assets/kenney_pirate-kit/Models/GLB format/tower-complete-small.glb"
+const TOWER_SCENE: PackedScene = preload("res://assets/kenney_pirate-kit/Models/GLB format/tower-complete-small.glb")
 
 func setup(p_team: int) -> void:
 	team = p_team
 	add_to_group("towers")
 	# Load and instance the model in code
 	_load_team_model()
-	# Enable debug collision visual
-	debug_collision.visible = true
 	# Resize collision sphere
 	var shape: SphereShape3D = SphereShape3D.new()
 	shape.radius = attack_range
 	$Area3D/CollisionShape3D.shape = shape
-	# Register health bar
-	var entity_hud := get_node_or_null("/root/Main/HUD/HUDOverlay/EntityHUD")
-	if entity_hud and entity_hud.has_method("register_entity"):
-		hud_id = entity_hud.call("register_entity", self, MAX_HEALTH, team)
 
 func _load_team_model() -> void:
-	var gltf := GLTFDocument.new()
-	var state := GLTFState.new()
-	var err := gltf.append_from_file(TOWER_MODEL_PATH, state)
-	if err != OK:
-		print("TowerAI: GLTF failed error=", err)
-		return
-	var root: Node3D = gltf.generate_scene(state)
+	var root: Node3D = TOWER_SCENE.instantiate()
 	if not root:
-		print("TowerAI: generate_scene failed")
+		push_error("TowerAI: instantiate failed")
 		return
 	add_child(root)
+	# Assign first MeshInstance3D in subtree for hit flash
+	var meshes: Array = find_children("*", "MeshInstance3D", true)
+	if meshes.size() > 0:
+		mesh = meshes[0] as MeshInstance3D
 	_add_hit_overlay()
-	print("TowerAI: loaded model")
 
 func _add_hit_overlay() -> void:
-	for child in get_children():
-		if child is MeshInstance3D:
-			var overlay_mat := StandardMaterial3D.new()
-			overlay_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			overlay_mat.albedo_color = Color(1, 0.2, 0.2, 0.0)
-			overlay_mat.emission_enabled = true
-			overlay_mat.emission = Color(1, 0.2, 0.2, 1)
-			overlay_mat.emission_energy_multiplier = 3.0
-			child.set("material_override", overlay_mat)
+	for child in find_children("*", "MeshInstance3D", true):
+		var overlay_mat := StandardMaterial3D.new()
+		overlay_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		overlay_mat.albedo_color = Color(1, 0.2, 0.2, 0.0)
+		overlay_mat.emission_enabled = true
+		overlay_mat.emission = Color(1, 0.2, 0.2, 1)
+		overlay_mat.emission_energy_multiplier = 3.0
+		(child as MeshInstance3D).set("material_override", overlay_mat)
 
 func _process(delta: float) -> void:
 	if _dead:
@@ -92,48 +78,54 @@ func _find_target() -> Node3D:
 		if body_team == team:
 			continue
 		var d := global_position.distance_to(body.global_position)
-		if d < best_dist:
+		if d < best_dist and _has_line_of_sight(body):
 			best_dist = d
 			best = body
 	return best
 
+func _has_line_of_sight(target: Node3D) -> bool:
+	var from: Vector3 = global_position + Vector3(0.0, 2.0, 0.0)
+	var to: Vector3 = target.global_position + Vector3(0.0, 0.8, 0.0)
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var excluded: Array[RID] = [get_rid(), target.get_rid()]
+	for _attempt in range(4):
+		var query := PhysicsRayQueryParameters3D.create(from, to)
+		query.exclude = excluded
+		query.collision_mask = 0b11
+		var result: Dictionary = space.intersect_ray(query)
+		if result.is_empty():
+			return true
+		var body: Object = result.collider
+		if body != null and body.has_meta("tree_trunk_height"):
+			# Short trees (below barrel) and any tree — ignore, they're foliage, not walls
+			excluded.append(body.get_rid())
+			continue
+		return false
+	return true
+
 func _shoot(target: Node3D) -> void:
 	var spawn_pos: Vector3 = global_position + Vector3(0.0, 2.0, 0.0)
 	var aim_pos: Vector3 = target.global_position + Vector3(0.0, 0.5, 0.0)
-	var dir: Vector3 = (aim_pos - spawn_pos).normalized()
-	dir.y += 0.04
-	dir = dir.normalized()
 
-	var bullet: Node3D = BulletScene.instantiate()
-	bullet.damage = attack_damage
-	bullet.source = "tower"
-	bullet.shooter_team = team
-	bullet.velocity = dir * BULLET_SPEED
-	get_tree().root.get_child(0).add_child(bullet)
-	bullet.global_position = spawn_pos
+	var ball: Node3D = BulletScene.instantiate()
+	ball.damage = attack_damage
+	ball.source = "cannonball"
+	ball.shooter_team = team
+	ball.target_pos = aim_pos
+	# Position must be set before add_child so _ready() computes arc from correct origin
+	ball.position = spawn_pos
+	get_tree().root.get_child(0).add_child(ball)
 
-	if multiplayer.is_server():
-		LobbyManager.spawn_bullet_visuals.rpc(bullet.global_position, dir, attack_damage, team)
+var _killer_peer_id: int = -1
 
-	# Visual feedback: flash
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(1, 1, 0)
-	mesh.material_override = mat
-	await get_tree().create_timer(0.1).timeout
-	if not _dead:
-		var base_mat := StandardMaterial3D.new()
-		base_mat.albedo_color = Color(0.1, 0.6, 1.0) if team == 0 else Color(1.0, 0.4, 0.1)
-		mesh.material_override = base_mat
-
-func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
+func take_damage(amount: float, _source: String, _killer_team: int = -1, killer_peer_id: int = -1) -> void:
+	if not multiplayer.is_server():
+		return
 	if _dead:
 		return
+	_killer_peer_id = killer_peer_id
 	health -= amount
 	_hit_flash()
-	if hud_id > 0:
-		var entity_hud := get_node_or_null("/root/Main/HUD/HUDOverlay/EntityHUD")
-		if entity_hud and entity_hud.has_method("update_entity_health"):
-			entity_hud.call("update_entity_health", hud_id, health)
 	if health <= 0:
 		_die()
 
@@ -155,4 +147,14 @@ func _hit_flash() -> void:
 
 func _die() -> void:
 	_dead = true
-	queue_free()
+	# Award XP to the killing player (server-authoritative)
+	if _killer_peer_id > 0:
+		LevelSystem.award_xp(_killer_peer_id, LevelSystem.XP_TOWER)
+	elif not multiplayer.has_multiplayer_peer():
+		LevelSystem.award_xp(1, LevelSystem.XP_TOWER)
+	if multiplayer.has_multiplayer_peer():
+		LobbyManager.despawn_tower.rpc(name)
+	else:
+		var node_type: String = LobbyManager._type_from_node_name(name)
+		LobbyManager.tower_despawned.emit(node_type, team)
+		queue_free()

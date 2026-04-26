@@ -1,6 +1,7 @@
-[gd_scene load_steps=17 format=3 uid="uid://main"]
+[gd_scene load_steps=30 format=3 uid="uid://main"]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/EventFeed.gd" id="scripts/EventFeed.gd"]
 [ext_resource type="PackedScene" path="res://scenes/FPSPlayer.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/Base.tscn" id="3"]
 [ext_resource type="Script" path="res://scripts/RTSController.gd" id="4"]
@@ -11,14 +12,83 @@
 [ext_resource type="Script" path="res://scripts/TreePlacer.gd" id="11"]
 [ext_resource type="Environment" path="res://assets/night_environment.tres" id="10"]
 [ext_resource type="Script" path="res://scripts/Minimap.gd" id="12"]
-[ext_resource type="Script" path="res://scripts/EntityHUD.gd" id="13"]
 [ext_resource type="Script" path="res://scripts/WallPlacer.gd" id="14"]
+[ext_resource type="Script" path="res://scripts/FencePlacer.gd" id="15"]
+[ext_resource type="Theme" path="res://assets/ui_theme.tres" id="16"]
+[ext_resource type="Shader" path="res://assets/vignette.gdshader" id="vignette_shader"]
+[ext_resource type="Shader" path="res://assets/damage_flash.gdshader" id="damage_flash_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vignette"]
+shader = ExtResource("vignette_shader")
+shader_parameter/intensity = 0.2
+shader_parameter/radius = 1.4
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_damage_flash"]
+shader = ExtResource("damage_flash_shader")
+shader_parameter/intensity = 0.0
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_health_fill"]
-bg_color = Color(0.2, 0.9, 0.2, 1)
+bg_color = Color(0.25, 0.75, 0.25, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_stamina_fill"]
-bg_color = Color(1, 0.9, 0.2, 1)
+bg_color = Color(0.85, 0.75, 0.15, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bar_bg"]
+bg_color = Color(0.04, 0.05, 0.06, 0.90)
+border_width_left = 3
+border_color = Color(0.85, 0.32, 0.05, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_reload_fill"]
+bg_color = Color(1.0, 0.35, 0.1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_reload_bg"]
+bg_color = Color(0.04, 0.05, 0.06, 0.90)
+border_width_left = 2
+border_color = Color(0.85, 0.32, 0.05, 0.6)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.04, 0.05, 0.06, 0.88)
+border_width_left = 3
+border_color = Color(0.85, 0.32, 0.05, 1)
+content_margin_left = 10.0
+content_margin_right = 10.0
+content_margin_top = 4.0
+content_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_minimap_bg"]
+bg_color = Color(0.04, 0.05, 0.06, 0.88)
+border_width_left = 3
+border_width_right = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.85, 0.32, 0.05, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_fill"]
+bg_color = Color(1.0, 0.75, 0.1, 1.0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pending_btn_normal"]
+bg_color = Color(0.14, 0.08, 0.04, 1.0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.85, 0.32, 0.05, 1)
+content_margin_left = 6.0
+content_margin_right = 6.0
+content_margin_top = 2.0
+content_margin_bottom = 2.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pending_btn_hover"]
+bg_color = Color(0.28, 0.14, 0.04, 1.0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1.0, 0.55, 0.1, 1)
+content_margin_left = 6.0
+content_margin_right = 6.0
+content_margin_top = 2.0
+content_margin_bottom = 2.0
 
 [node name="Main" type="Node"]
 script = ExtResource("1")
@@ -38,11 +108,15 @@ script = ExtResource("11")
 [node name="WallPlacer" type="Node3D" parent="World"]
 script = ExtResource("14")
 
+[node name="FencePlacer" type="Node3D" parent="World"]
+script = ExtResource("15")
+
 ; ---- Lighting ----
 [node name="SunLight" type="DirectionalLight3D" parent="World"]
 transform = Transform3D(0.98, -0.08, 0.18, 0, 0.91, 0.41, -0.20, -0.40, 0.89, 0, 40, 0)
 light_color = Color(1.0, 0.45, 0.18, 1)
 light_energy = 0.55
+light_volumetric_fog_energy = 3.0
 shadow_enabled = true
 shadow_blur = 2.0
 directional_shadow_mode = 2
@@ -88,23 +162,102 @@ script = ExtResource("6")
 
 ; ---- HUD ----
 [node name="HUD" type="CanvasLayer" parent="."]
+theme = ExtResource("16")
+
+[node name="VignetteRect" type="ColorRect" parent="HUD"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+material = SubResource("ShaderMaterial_vignette")
+
+[node name="DamageFlashRect" type="ColorRect" parent="HUD"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+material = SubResource("ShaderMaterial_damage_flash")
 
 [node name="HUDOverlay" type="Node" parent="HUD"]
 
-[node name="EntityHUD" type="Node" parent="HUD/HUDOverlay"]
-script = ExtResource("13")
+[node name="WaveInfoPanel" type="PanelContainer" parent="HUD"]
+anchors_preset = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 260.0
+offset_bottom = 34.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="ModeLabel" type="Label" parent="HUD"]
-anchors_preset = 3
-anchor_left = 1.0
+[node name="WaveInfoLabel" type="Label" parent="HUD/WaveInfoPanel"]
+text = "First wave in: 30s"
+add_theme_font_size_override = 13
+add_theme_color_override/font_color = Color(0.55, 0.45, 0.35, 1)
+
+[node name="WaveAnnouncePanel" type="PanelContainer" parent="HUD"]
+anchors_preset = 5
+anchor_left = 0.5
 anchor_top = 0.0
-anchor_right = 1.0
+anchor_right = 0.5
 anchor_bottom = 0.0
-offset_left = -300.0
-offset_top = 10.0
-offset_right = -10.0
-offset_bottom = 40.0
-text = "Mode: FPS  [Tab] to switch"
+offset_left = -180.0
+offset_top = 72.0
+offset_right = 180.0
+offset_bottom = 112.0
+visible = false
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="WaveAnnounceLabel" type="Label" parent="HUD/WaveAnnouncePanel"]
+text = "— WAVE 1 —"
+horizontal_alignment = 1
+add_theme_font_size_override = 28
+add_theme_color_override/font_color = Color(1.0, 0.35, 0.1, 1)
+
+; ── XP / Level panel (top-center) ────────────────────────────────────────
+[node name="XPPanel" type="PanelContainer" parent="HUD"]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -180.0
+offset_top = 8.0
+offset_right = 180.0
+offset_bottom = 34.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="XPHBox" type="HBoxContainer" parent="HUD/XPPanel"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="LevelLabel" type="Label" parent="HUD/XPPanel/XPHBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(34, 0)
+text = "Lv.1"
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(1.0, 0.85, 0.2, 1.0)
+
+[node name="XPBar" type="ProgressBar" parent="HUD/XPPanel/XPHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+custom_minimum_size = Vector2(0, 14)
+min_value = 0.0
+max_value = 100.0
+value = 0.0
+show_percentage = false
+theme_override_styles/fill = SubResource("StyleBoxFlat_xp_fill")
+theme_override_styles/background = SubResource("StyleBoxFlat_bar_bg")
+
+[node name="PendingButton" type="Button" parent="HUD/XPPanel/XPHBox"]
+layout_mode = 2
+visible = false
+text = "↑ 1 pt"
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(1.0, 0.75, 0.1, 1.0)
+theme_override_styles/normal = SubResource("StyleBoxFlat_pending_btn_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_pending_btn_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_pending_btn_hover")
 
 [node name="GameOverLabel" type="Label" parent="HUD"]
 anchors_preset = 8
@@ -121,29 +274,7 @@ visible = false
 horizontal_alignment = 1
 vertical_alignment = 1
 add_theme_font_size_override = 36
-
-[node name="WaveInfoLabel" type="Label" parent="HUD"]
-anchors_preset = 0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = 400.0
-offset_bottom = 34.0
-text = "First wave in: 30s"
-
-[node name="WaveAnnounceLabel" type="Label" parent="HUD"]
-anchors_preset = 5
-anchor_left = 0.5
-anchor_top = 0.0
-anchor_right = 0.5
-anchor_bottom = 0.0
-offset_left = -160.0
-offset_top = 80.0
-offset_right = 160.0
-offset_bottom = 130.0
-text = "— WAVE 1 —"
-visible = false
-horizontal_alignment = 1
-add_theme_font_size_override = 42
+add_theme_color_override/font_color = Color(1.0, 0.35, 0.1, 1)
 
 [node name="Crosshair" type="Control" parent="HUD"]
 anchor_left = 0.0
@@ -162,7 +293,7 @@ offset_left = -1.0
 offset_top = -14.0
 offset_right = 1.0
 offset_bottom = -4.0
-color = Color(1, 1, 1, 0.85)
+color = Color(1.0, 0.35, 0.1, 0.85)
 mouse_filter = 1
 layout_mode = 2
 
@@ -175,7 +306,7 @@ offset_left = -1.0
 offset_top = 4.0
 offset_right = 1.0
 offset_bottom = 14.0
-color = Color(1, 1, 1, 0.85)
+color = Color(1.0, 0.35, 0.1, 0.85)
 mouse_filter = 1
 layout_mode = 2
 
@@ -188,7 +319,7 @@ offset_left = -14.0
 offset_top = -1.0
 offset_right = -4.0
 offset_bottom = 1.0
-color = Color(1, 1, 1, 0.85)
+color = Color(1.0, 0.35, 0.1, 0.85)
 mouse_filter = 1
 layout_mode = 2
 
@@ -201,7 +332,68 @@ offset_left = 4.0
 offset_top = -1.0
 offset_right = 14.0
 offset_bottom = 1.0
-color = Color(1, 1, 1, 0.85)
+color = Color(1.0, 0.35, 0.1, 0.85)
+mouse_filter = 1
+layout_mode = 2
+
+[node name="HitIndicatorRing" type="Control" parent="HUD/Crosshair"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+mouse_filter = 1
+layout_mode = 2
+rotation = 0.785398
+
+[node name="RingTop" type="ColorRect" parent="HUD/Crosshair/HitIndicatorRing"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -1.5
+offset_top = -42.0
+offset_right = 1.5
+offset_bottom = -12.0
+color = Color(1.0, 0.7, 0.0, 0)
+mouse_filter = 1
+layout_mode = 2
+
+[node name="RingBottom" type="ColorRect" parent="HUD/Crosshair/HitIndicatorRing"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -1.5
+offset_top = 12.0
+offset_right = 1.5
+offset_bottom = 42.0
+color = Color(1.0, 0.7, 0.0, 0)
+mouse_filter = 1
+layout_mode = 2
+
+[node name="RingLeft" type="ColorRect" parent="HUD/Crosshair/HitIndicatorRing"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -42.0
+offset_top = -1.5
+offset_right = -12.0
+offset_bottom = 1.5
+color = Color(1.0, 0.7, 0.0, 0)
+mouse_filter = 1
+layout_mode = 2
+
+[node name="RingRight" type="ColorRect" parent="HUD/Crosshair/HitIndicatorRing"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 12.0
+offset_top = -1.5
+offset_right = 42.0
+offset_bottom = 1.5
+color = Color(1.0, 0.7, 0.0, 0)
 mouse_filter = 1
 layout_mode = 2
 
@@ -219,36 +411,74 @@ max_value = 100.0
 value = 0.0
 visible = false
 show_percentage = false
+theme_override_styles/fill = SubResource("StyleBoxFlat_reload_fill")
+theme_override_styles/background = SubResource("StyleBoxFlat_reload_bg")
 
-[node name="HealthBar" type="ProgressBar" parent="HUD"]
+[node name="VitalsPanel" type="PanelContainer" parent="HUD"]
 anchor_left = 0.0
 anchor_top = 1.0
 anchor_right = 0.0
 anchor_bottom = 1.0
-offset_left = 10.0
-offset_top = -30.0
-offset_right = 210.0
-offset_bottom = -10.0
-min_value = 0.0
-max_value = 100.0
-value = 100.0
-show_percentage = false
-theme_override_styles/fill = SubResource("StyleBoxFlat_health_fill")
+offset_left = 8.0
+offset_top = -122.0
+offset_right = 218.0
+offset_bottom = -8.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="StaminaBar" type="ProgressBar" parent="HUD"]
-anchor_left = 0.0
-anchor_top = 1.0
-anchor_right = 0.0
-anchor_bottom = 1.0
-offset_left = 10.0
-offset_top = -50.0
-offset_right = 210.0
-offset_bottom = -40.0
+[node name="VitalsBox" type="VBoxContainer" parent="HUD/VitalsPanel"]
+theme_override_constants/separation = 4
+
+[node name="WeaponSlots" type="HBoxContainer" parent="HUD/VitalsPanel/VitalsBox"]
+theme_override_constants/separation = 6
+
+[node name="Slot1Row" type="Control" parent="HUD/VitalsPanel/VitalsBox/WeaponSlots"]
+custom_minimum_size = Vector2(48, 48)
+
+[node name="Slot1Icon" type="TextureRect" parent="HUD/VitalsPanel/VitalsBox/WeaponSlots/Slot1Row"]
+custom_minimum_size = Vector2(48, 48)
+size = Vector2(48, 48)
+expand_mode = 0
+stretch_mode = 5
+
+[node name="Slot2Row" type="Control" parent="HUD/VitalsPanel/VitalsBox/WeaponSlots"]
+custom_minimum_size = Vector2(48, 48)
+modulate = Color(1, 1, 1, 0.45)
+
+[node name="Slot2Icon" type="TextureRect" parent="HUD/VitalsPanel/VitalsBox/WeaponSlots/Slot2Row"]
+custom_minimum_size = Vector2(48, 48)
+size = Vector2(48, 48)
+expand_mode = 0
+stretch_mode = 5
+
+[node name="WeaponSpacer" type="Control" parent="HUD/VitalsPanel/VitalsBox"]
+custom_minimum_size = Vector2(0, 4)
+mouse_filter = 2
+
+[node name="Divider" type="ColorRect" parent="HUD/VitalsPanel/VitalsBox"]
+custom_minimum_size = Vector2(200, 1)
+color = Color(0.6, 0.6, 0.6, 0.4)
+mouse_filter = 2
+
+[node name="StaminaBar" type="ProgressBar" parent="HUD/VitalsPanel/VitalsBox"]
+custom_minimum_size = Vector2(200, 10)
 min_value = 0.0
 max_value = 100.0
 value = 100.0
 show_percentage = false
 theme_override_styles/fill = SubResource("StyleBoxFlat_stamina_fill")
+theme_override_styles/background = SubResource("StyleBoxFlat_bar_bg")
+
+[node name="HealthBar" type="ProgressBar" parent="HUD/VitalsPanel/VitalsBox"]
+custom_minimum_size = Vector2(200, 20)
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_override_styles/fill = SubResource("StyleBoxFlat_health_fill")
+theme_override_styles/background = SubResource("StyleBoxFlat_bar_bg")
+
+
 
 [node name="RespawnLabel" type="Label" parent="HUD"]
 anchors_preset = 8
@@ -263,42 +493,86 @@ offset_bottom = 70.0
 text = ""
 horizontal_alignment = 1
 visible = false
+add_theme_font_size_override = 24
+add_theme_color_override/font_color = Color(1.0, 0.35, 0.1, 1)
 
-[node name="Minimap" type="Control" parent="HUD"]
+[node name="MinimapPanel" type="PanelContainer" parent="HUD"]
 anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 0.0
-offset_left = -160.0
-offset_top = 50.0
-offset_right = -10.0
-offset_bottom = 200.0
+offset_left = -162.0
+offset_top = 48.0
+offset_right = -8.0
+offset_bottom = 202.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_minimap_bg")
+
+[node name="Minimap" type="Control" parent="HUD/MinimapPanel"]
+custom_minimum_size = Vector2(150, 150)
 mouse_filter = 2
 script = ExtResource("12")
 
-[node name="AmmoLabel" type="Label" parent="HUD"]
+[node name="AmmoPanel" type="PanelContainer" parent="HUD"]
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -160.0
-offset_top = -60.0
-offset_right = -10.0
-offset_bottom = -10.0
+offset_left = -170.0
+offset_top = -66.0
+offset_right = -8.0
+offset_bottom = -38.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="AmmoLabel" type="Label" parent="HUD/AmmoPanel"]
 text = "10 / 50"
 horizontal_alignment = 2
+add_theme_font_size_override = 18
+add_theme_color_override/font_color = Color(0.90, 0.86, 0.80, 1)
 
-[node name="PointsLabel" type="Label" parent="HUD"]
+[node name="PointsPanel" type="PanelContainer" parent="HUD"]
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -160.0
-offset_top = -30.0
-offset_right = -10.0
-offset_bottom = -10.0
+offset_left = -170.0
+offset_top = -36.0
+offset_right = -8.0
+offset_bottom = -8.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="PointsLabel" type="Label" parent="HUD/PointsPanel"]
 text = "BLUE: 0 | RED: 0"
 horizontal_alignment = 2
+add_theme_font_size_override = 15
+add_theme_color_override/font_color = Color(0.55, 0.45, 0.35, 1)
+
+[node name="EventFeed" type="Control" parent="HUD"]
+script = ExtResource("scripts/EventFeed.gd")
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -260.0
+offset_top = -258.0
+offset_right = -8.0
+offset_bottom = -74.0
+mouse_filter = 2
+
+[node name="VBox" type="VBoxContainer" parent="HUD/EventFeed"]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+alignment = 2
+mouse_filter = 2
 
 [node name="ReloadPrompt" type="Label" parent="HUD"]
 anchors_preset = 5
@@ -314,18 +588,7 @@ text = "[ R ]  RELOAD"
 visible = false
 horizontal_alignment = 1
 add_theme_font_size_override = 20
-
-[node name="WeaponLabel" type="Label" parent="HUD"]
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -150.0
-offset_top = -30.0
-offset_right = 150.0
-offset_bottom = -10.0
-text = "[1] Pistol   [2] —"
-horizontal_alignment = 1
+add_theme_color_override/font_color = Color(1.0, 0.35, 0.1, 1)
 
 [node name="AudioModeSwitch" type="AudioStreamPlayer" parent="."]
 stream = null

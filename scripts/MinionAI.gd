@@ -3,12 +3,10 @@ extends CharacterBody3D
 const GRAVITY          := 20.0
 const MAX_HEALTH       := 60.0
 const DETECT_RANGE     := 12.0
-const DARK_DETECT_RANGE := 5.0
-const DARK_MISS_CHANCE  := 0.60
 const SHOOT_RANGE      := 10.0
 const SEPARATION_DIST  := 2.2
 const SEPARATION_FORCE := 6.0
-const BULLET_SPEED     := 84.0
+const BULLET_SPEED     := 58.8
 
 const MINION_SHOOT_SOUND := "res://assets/kenney_sci-fi-sounds/Audio/laserSmall_002.ogg"
 const MINION_DEATH_SOUND := "res://assets/kenney_sci-fi-sounds/Audio/impactMetal_000.ogg"
@@ -25,8 +23,17 @@ var _lane_index     := 0
 var _dead           := false
 var _time           := 0.0
 var _strafe_phase   := 0.0
-var points_label: Label = null
-var hud_ui: Control = null
+
+# Slow debuff
+var _slow_timer: float = 0.0
+var _slow_mult:  float = 1.0
+
+# Multiplayer: server drives AI, clients are puppets
+var is_puppet: bool = false
+var _physics_process_disabled: bool = false
+var _minion_id: int = 0
+var _puppet_target_pos: Vector3 = Vector3.ZERO
+var _puppet_target_rot: float = 0.0
 
 var waypoints: Array[Vector3] = []
 var current_waypoint := 0
@@ -75,7 +82,6 @@ func _ready() -> void:
 	add_to_group("minions")
 	add_to_group("minion_units")
 	call_deferred("_init_visuals")
-	call_deferred("_create_hud_element")
 	call_deferred("_cache_static_refs")
 
 func _init_visuals() -> void:
@@ -174,10 +180,19 @@ func setup(p_team: int, p_waypoints: Array[Vector3], p_lane: int) -> void:
 	_strafe_phase = randf() * TAU
 
 func _physics_process(delta: float) -> void:
+	if is_puppet:
+		return
 	if _dead:
 		return
 
 	_time += delta
+
+	# Slow debuff tick
+	if _slow_timer > 0.0:
+		_slow_timer -= delta
+		if _slow_timer <= 0.0:
+			_slow_timer = 0.0
+			_slow_mult = 1.0
 
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
@@ -215,7 +230,7 @@ func _physics_process(delta: float) -> void:
 			moving = true
 	else:
 		_march(delta)
-		moving = velocity.length() > 0.5
+		moving = velocity.length_squared() > 0.25
 
 	# Drive walk/idle animation
 	if moving:
@@ -231,6 +246,26 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
+func _process(delta: float) -> void:
+	if not is_puppet or _dead:
+		return
+	global_position = global_position.lerp(_puppet_target_pos, delta * 12.0)
+	rotation.y = lerp_angle(rotation.y, _puppet_target_rot, delta * 12.0)
+	var dist: float = global_position.distance_to(_puppet_target_pos)
+	if dist > 0.15:
+		_play_anim("walk")
+	else:
+		_play_anim("idle")
+
+func apply_puppet_state(pos: Vector3, rot: float, hp: float) -> void:
+	if is_puppet and not _physics_process_disabled:
+		set_physics_process(false)
+		_physics_process_disabled = true
+	_puppet_target_pos = pos
+	_puppet_target_rot = rot
+	if hp <= 0.0 and not _dead:
+		_die()
+
 func _approach_with_strafe(target: Node3D, _delta: float) -> void:
 	var to_target: Vector3 = target.global_position - global_position
 	to_target.y = 0.0
@@ -238,8 +273,8 @@ func _approach_with_strafe(target: Node3D, _delta: float) -> void:
 	var right := Vector3(-forward.z, 0.0, forward.x)
 	var strafe := sin(_time * 2.2 + _strafe_phase)
 	var move_dir := (forward + right * strafe * 0.55).normalized()
-	velocity.x = move_dir.x * speed
-	velocity.z = move_dir.z * speed
+	velocity.x = move_dir.x * speed * _slow_mult
+	velocity.z = move_dir.z * speed * _slow_mult
 	_face(target.global_position)
 
 func _apply_separation() -> void:
@@ -252,7 +287,7 @@ func _apply_separation() -> void:
 		var d: float = diff.length()
 		if d < SEPARATION_DIST and d > 0.01:
 			push += diff.normalized() * (SEPARATION_DIST - d) / SEPARATION_DIST
-	if push.length() > 0.01:
+	if push.length_squared() > 0.0001:
 		velocity.x += push.x * SEPARATION_FORCE
 		velocity.z += push.z * SEPARATION_FORCE
 
@@ -262,22 +297,22 @@ func _march(_delta: float) -> void:
 		var dest := waypoints[current_waypoint]
 		dest.y = global_position.y
 		var dir: Vector3 = dest - global_position
-		if dir.length() < 0.5:
+		if dir.length_squared() < 0.25:
 			current_waypoint += 1
 			return
 		var horiz: Vector3 = dir.normalized()
-		velocity.x = horiz.x * speed
-		velocity.z = horiz.z * speed
+		velocity.x = horiz.x * speed * _slow_mult
+		velocity.z = horiz.z * speed * _slow_mult
 		_face(dest)
 	elif _target == null:
 		# Waypoints exhausted, continue to enemy base using cached ref
 		if _enemy_base and is_instance_valid(_enemy_base):
 			var to_base: Vector3 = _enemy_base.global_position - global_position
 			to_base.y = 0.0
-			if to_base.length() > 2.0:
+			if to_base.length_squared() > 4.0:
 				var dir: Vector3 = to_base.normalized()
-				velocity.x = dir.x * speed
-				velocity.z = dir.z * speed
+				velocity.x = dir.x * speed * _slow_mult
+				velocity.z = dir.z * speed * _slow_mult
 				_face(to_base)
 			else:
 				velocity.x = 0.0
@@ -293,7 +328,7 @@ func _march(_delta: float) -> void:
 func _face(target: Vector3) -> void:
 	var dir := target - global_position
 	dir.y = 0
-	if dir.length() > 0.01:
+	if dir.length_squared() > 0.0001:
 		look_at(global_position + dir, Vector3.UP)
 
 func _find_target() -> Node3D:
@@ -303,19 +338,34 @@ func _find_target() -> Node3D:
 		if m == self or m.team == team or m._dead:
 			continue
 		var d: float = global_position.distance_to(m.global_position)
-		var effective_range: float = DARK_DETECT_RANGE if _is_in_darkness(m.global_position) else DETECT_RANGE
-		if d < effective_range and d < best_dist:
+		if d < DETECT_RANGE and d < best_dist:
 			best_dist = d
 			best = m
-	var player := get_tree().get_first_node_in_group("player")
-	if player and player.has_method("get"):
+	# Check all local FPSPlayer nodes (singleplayer + host's own player in MP)
+	for player in get_tree().get_nodes_in_group("player"):
+		if not player.has_method("get"):
+			continue
 		var p_team: int = player.get("player_team") if player.get("player_team") != null else -1
-		if p_team != team and p_team >= 0:
-			var d: float = global_position.distance_to(player.global_position)
-			var effective_range: float = DARK_DETECT_RANGE if _is_in_darkness(player.global_position) else DETECT_RANGE
-			if d < effective_range and d < best_dist:
-				best_dist = d
-				best = player
+		if p_team == team or p_team < 0:
+			continue
+		var d: float = global_position.distance_to(player.global_position)
+		if d < DETECT_RANGE and d < best_dist:
+			best_dist = d
+			best = player
+	# Also check RemotePlayer ghosts (client players visible on server/other clients)
+	for ghost in get_tree().get_nodes_in_group("remote_players"):
+		var ghost_peer: int = ghost.get("peer_id") if ghost.get("peer_id") != null else -1
+		if ghost_peer < 0:
+			continue
+		if GameSync.player_dead.get(ghost_peer, false):
+			continue
+		var g_team: int = GameSync.get_player_team(ghost_peer)
+		if g_team == team:
+			continue
+		var d: float = global_position.distance_to(ghost.global_position)
+		if d < DETECT_RANGE and d < best_dist:
+			best_dist = d
+			best = ghost
 	for t in _cached_towers:
 		if not is_instance_valid(t) or t.team == team:
 			continue
@@ -332,14 +382,8 @@ func _find_target() -> Node3D:
 			best = b
 	return best
 
-func _is_in_darkness(_pos: Vector3) -> bool:
-	return false
-
 func _fire_at(target: Node3D) -> void:
 	if not is_inside_tree() or not is_instance_valid(target) or not target.is_inside_tree():
-		return
-	# Miss chance when target is in darkness
-	if _is_in_darkness(target.global_position) and randf() < DARK_MISS_CHANCE:
 		return
 	var spawn_pos: Vector3 = global_position + Vector3(0.0, 0.8, 0.0)
 	var aim_pos: Vector3   = target.global_position + Vector3(0.0, 0.5, 0.0)
@@ -360,31 +404,29 @@ func _fire_at(target: Node3D) -> void:
 
 	shoot_audio.play()
 
-func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
+var _killer_peer_id: int = -1  # set in take_damage, read in _die
+
+func take_damage(amount: float, _source: String, _killer_team: int = -1, killer_peer_id: int = -1) -> void:
+	if is_puppet:
+		return  # Clients don't process damage — server only
 	if _dead:
-					return
+		return
+	# Friendly fire guard — same team = no damage
+	if _killer_team >= 0 and _killer_team == team:
+		return
+	_killer_peer_id = killer_peer_id
 	health -= amount
 	if health <= 0.0:
 		_die()
 		var awarding_team: int = _killer_team if _killer_team >= 0 else 0
 		var pts: int = 10 if _killer_team == -1 else 5
 		TeamData.add_points(awarding_team, pts)
-		_update_points_label()
+		if multiplayer.is_server():
+			LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
 
-func _create_hud_element() -> void:
-	var entity_hud := get_node_or_null("/root/Main/HUD/HUDOverlay/EntityHUD")
-	if entity_hud and entity_hud.has_method("register_entity"):
-		var id: int = entity_hud.call("register_entity", self, MAX_HEALTH, team)
-		var entry: Dictionary = entity_hud.call("get_entity_by_id", id)
-		if not entry.is_empty():
-			hud_ui = entry.ui_node
-
-func _update_points_label() -> void:
-	if points_label == null:
-		return
-	var blue_pts: int = TeamData.get_points(0)
-	var red_pts: int = TeamData.get_points(1)
-	points_label.text = "BLUE: %d | RED: %d" % [blue_pts, red_pts]
+func apply_slow(duration: float, mult: float) -> void:
+	_slow_timer = max(_slow_timer, duration)
+	_slow_mult = min(_slow_mult, mult)
 
 func _die() -> void:
 	if _dead:
@@ -401,6 +443,13 @@ func _die() -> void:
 	if multiplayer.is_server():
 		var path: NodePath = get_path()
 		LobbyManager.kill_minion_visuals.rpc(path)
+		# Award XP to the killing player
+		if _killer_peer_id > 0:
+			LevelSystem.award_xp(_killer_peer_id, LevelSystem.XP_MINION)
+	elif not multiplayer.has_multiplayer_peer():
+		# Singleplayer: use peer_id 1
+		var sp_killer: int = _killer_peer_id if _killer_peer_id > 0 else 1
+		LevelSystem.award_xp(sp_killer, LevelSystem.XP_MINION)
 
 func force_die() -> void:
 	_die()

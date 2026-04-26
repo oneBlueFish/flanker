@@ -1,5 +1,7 @@
 extends Node3D
 
+signal hit_something(hit_type: String)
+
 const BULLET_GRAVITY := 18.0
 const MAX_LIFETIME   := 3.0
 
@@ -7,28 +9,14 @@ var velocity: Vector3    = Vector3.ZERO
 var damage: float        = 10.0
 var source: String       = "unknown"
 var shooter_team: int    = -1   # -1 = player, 0/1 = minion team
+var shooter_peer_id: int = -1   # peer_id of the firing player (-1 = minion/unknown)
 
 var _age: float = 0.0
 var _mesh_inst: MeshInstance3D = null
 
 func _ready() -> void:
 	_mesh_inst = $MeshInstance3D
-	# Tint tracer by source
-	var mat := StandardMaterial3D.new()
-	mat.flags_unshaded = true
-	mat.emission_enabled = true
-	if shooter_team == -1:
-		mat.albedo_color    = Color(1.0, 0.95, 0.6, 1.0)
-		mat.emission        = Color(1.0, 0.95, 0.6)
-	elif shooter_team == 0:
-		mat.albedo_color    = Color(0.4, 0.6, 1.0, 1.0)
-		mat.emission        = Color(0.4, 0.6, 1.0)
-	else:
-		mat.albedo_color    = Color(1.0, 0.4, 0.4, 1.0)
-		mat.emission        = Color(1.0, 0.4, 0.4)
-	mat.emission_energy_multiplier = 3.0
-	mat.no_depth_test = true
-	_mesh_inst.material_override = mat
+	_mesh_inst.material_override = CombatUtils.make_team_tracer_material(shooter_team)
 
 func _process(delta: float) -> void:
 	_age += delta
@@ -48,10 +36,26 @@ func _process(delta: float) -> void:
 	if result.size() > 0:
 		var hit: Object = result.collider
 		var hit_pos: Vector3 = result.position
-		var hit_normal: Vector3 = result.get("normal", Vector3.UP)
-		if _should_damage(hit):
-			hit.take_damage(damage, source, shooter_team)
-		_spawn_sparks(hit_pos, hit_normal, hit)
+		# Ghost hitbox — route damage via GameSync RPC
+		if hit is StaticBody3D and hit.has_meta("ghost_peer_id"):
+			var target_peer: int = hit.get_meta("ghost_peer_id")
+			if not GameSync.player_dead.get(target_peer, false):
+				var ghost_team: int = GameSync.get_player_team(target_peer)
+				var friendly: bool = (shooter_team >= 0 and ghost_team == shooter_team)
+				if not friendly and multiplayer.is_server():
+					var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team, shooter_peer_id)
+					LobbyManager.apply_player_damage.rpc(target_peer, new_hp)
+					if new_hp <= 0.0:
+						LobbyManager.notify_player_died.rpc(target_peer)
+			hit_something.emit("player")
+			_spawn_sparks(hit_pos, hit)
+			queue_free()
+			return
+		if CombatUtils.should_damage(hit, shooter_team):
+			var hit_type := _get_hit_type(hit)
+			hit_something.emit(hit_type)
+			hit.take_damage(damage, source, shooter_team, shooter_peer_id)
+		_spawn_sparks(hit_pos, hit)
 		queue_free()
 		return
 
@@ -64,21 +68,11 @@ func _process(delta: float) -> void:
 		if diff.normalized().length() > 0.0:
 			look_at(target_pos, Vector3.UP)
 
-func _should_damage(hit: Object) -> bool:
-	if not hit.has_method("take_damage"):
-		return false
-	# Friendly fire: same team = no damage
-	var hit_team = hit.get("team") if hit.get("team") != null else -999
-	if shooter_team != -1 and hit_team == shooter_team:
-		return false
-	# Player bullet hitting player = no damage (team == -1 on both sides)
-	if shooter_team == -1 and hit_team == -1:
-		return false
-	return true
-
-func _spawn_sparks(pos: Vector3, normal: Vector3, hit: Object) -> void:
+func _spawn_sparks(pos: Vector3, hit: Object) -> void:
 	var spark_type := "ground"
-	if hit.has_method("take_damage"):
+	if hit is StaticBody3D and hit.has_meta("ghost_peer_id"):
+		spark_type = "unit"
+	elif hit.has_method("take_damage"):
 		if hit is StaticBody3D:
 			spark_type = "building"
 		else:
@@ -88,7 +82,7 @@ func _spawn_sparks(pos: Vector3, normal: Vector3, hit: Object) -> void:
 
 	var particles := GPUParticles3D.new()
 	var pmat := ParticleProcessMaterial.new()
-	pmat.direction = normal
+	pmat.direction = Vector3.UP
 	pmat.spread = 45.0
 	pmat.initial_velocity_min = 3.0
 	pmat.initial_velocity_max = 6.0
@@ -118,8 +112,18 @@ func _spawn_sparks(pos: Vector3, normal: Vector3, hit: Object) -> void:
 
 	get_tree().root.add_child(particles)
 	particles.global_position = pos
-	particles.rotation = Vector3(-normal.x, 0, -normal.z).signed_angle_to(Vector3.FORWARD, Vector3.UP) * Vector3(0, 1, 0)
 
 	particles.emitting = true
 	particles.restart()
 	particles.call_deferred("free")
+
+func _get_hit_type(hit: Object) -> String:
+	if hit is StaticBody3D and hit.has_meta("ghost_peer_id"):
+		return "player"
+	if hit is StaticBody3D and (hit.is_in_group("towers") or (hit.get_parent() != null and hit.get_parent().is_in_group("towers"))):
+		return "tower"
+	if hit.has_method("take_damage"):
+		var hit_team: int = hit.get("team") if hit.get("team") != null else -999
+		if hit_team >= 0:
+			return "minion"
+	return "building"

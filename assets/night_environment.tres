@@ -1,18 +1,9 @@
 [gd_resource type="Environment" format=3]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
-sky_top_color = Color(0.10, 0.12, 0.18, 1)
-sky_horizon_color = Color(0.12, 0.14, 0.22, 1)
-sky_curve = 0.15
-sky_energy_multiplier = 1.0
-ground_bottom_color = Color(0.06, 0.05, 0.08, 1)
-ground_horizon_color = Color(0.10, 0.12, 0.18, 1)
-ground_curve = 0.2
-sun_angle_max = 2.0
-sun_curve = 0.12
+[ext_resource type="Material" path="res://assets/skybox/night_sky_material.tres" id="NightSkyMat"]
 
 [sub_resource type="Sky" id="Sky_1"]
-sky_material = SubResource("ProceduralSkyMaterial_1")
+sky_material = ExtResource("NightSkyMat")
 process_mode = 2
 
 [resource]
@@ -33,6 +24,13 @@ fog_light_color = Color(0.15, 0.12, 0.1, 1)
 fog_light_energy = 0.8
 fog_density = 0.1
 fog_aerial_perspective = 0.8
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.015
+volumetric_fog_anisotropy = 0.3
+volumetric_fog_length = 64.0
+volumetric_fog_detail_spread = 2.0
+volumetric_fog_gi_inject = 0.5
+volumetric_fog_ambient_inject = 0.2
 glow_enabled = true
 glow_levels/1 = true
 glow_levels/2 = true
