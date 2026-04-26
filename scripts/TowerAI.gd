@@ -11,11 +11,11 @@ var attack_cooldown := 1.0
 var _attack_timer := 0.0
 var _dead := false
 var _team_mat: StandardMaterial3D = null
+var mesh: MeshInstance3D = null
 
-@onready var mesh: MeshInstance3D = $MeshInstance3D
 @onready var area: Area3D = $Area3D
 
-const TOWER_MODEL_PATH := "res://assets/kenney_pirate-kit/Models/GLB format/tower-complete-small.glb"
+const TOWER_SCENE: PackedScene = preload("res://assets/kenney_pirate-kit/Models/GLB format/tower-complete-small.glb")
 
 func setup(p_team: int) -> void:
 	team = p_team
@@ -28,29 +28,26 @@ func setup(p_team: int) -> void:
 	$Area3D/CollisionShape3D.shape = shape
 
 func _load_team_model() -> void:
-	var gltf := GLTFDocument.new()
-	var state := GLTFState.new()
-	var err := gltf.append_from_file(TOWER_MODEL_PATH, state)
-	if err != OK:
-		push_error("TowerAI: GLTF failed error=" + str(err))
-		return
-	var root: Node3D = gltf.generate_scene(state)
+	var root: Node3D = TOWER_SCENE.instantiate()
 	if not root:
-		push_error("TowerAI: generate_scene failed")
+		push_error("TowerAI: instantiate failed")
 		return
 	add_child(root)
+	# Assign first MeshInstance3D in subtree for hit flash
+	var meshes: Array = find_children("*", "MeshInstance3D", true)
+	if meshes.size() > 0:
+		mesh = meshes[0] as MeshInstance3D
 	_add_hit_overlay()
 
 func _add_hit_overlay() -> void:
-	for child in get_children():
-		if child is MeshInstance3D:
-			var overlay_mat := StandardMaterial3D.new()
-			overlay_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			overlay_mat.albedo_color = Color(1, 0.2, 0.2, 0.0)
-			overlay_mat.emission_enabled = true
-			overlay_mat.emission = Color(1, 0.2, 0.2, 1)
-			overlay_mat.emission_energy_multiplier = 3.0
-			child.set("material_override", overlay_mat)
+	for child in find_children("*", "MeshInstance3D", true):
+		var overlay_mat := StandardMaterial3D.new()
+		overlay_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		overlay_mat.albedo_color = Color(1, 0.2, 0.2, 0.0)
+		overlay_mat.emission_enabled = true
+		overlay_mat.emission = Color(1, 0.2, 0.2, 1)
+		overlay_mat.emission_energy_multiplier = 3.0
+		(child as MeshInstance3D).set("material_override", overlay_mat)
 
 func _process(delta: float) -> void:
 	if _dead:
