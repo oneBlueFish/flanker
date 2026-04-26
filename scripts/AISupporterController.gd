@@ -35,6 +35,13 @@ const PLAYER_NEED_COOLDOWN: float = 30.0
 const LOW_HP_THRESHOLD: float = 40.0
 const LOW_AMMO_THRESHOLD: int = 15
 
+# Minimum enemy minion cluster size to justify a missile strike
+const MINION_CLUSTER_MIN: int = 3
+# Radius to count minions around cluster centroid
+const MINION_CLUSTER_RADIUS: float = 18.0
+# How far from enemy base z (in absolute units) a target must be — prevents base strikes
+const BASE_EXCLUSION_Z: float = 70.0
+
 var team: int = 0
 var build_system: Node = null
 
@@ -46,6 +53,9 @@ var _placed_counts: Dictionary = {}
 var _drop_cooldowns: Dictionary = {}
 # peer_id -> last known world position (populated from remote_player_updated)
 var _known_positions: Dictionary = {}
+
+# launcher_node_name -> remaining fire cooldown seconds (0.0 = ready)
+var _launcher_cooldowns: Dictionary = {}
 
 func _ready() -> void:
 	set_process(true)
@@ -60,6 +70,15 @@ func _process(delta: float) -> void:
 		_drop_cooldowns[pid] -= delta
 		if _drop_cooldowns[pid] <= 0.0:
 			_drop_cooldowns.erase(pid)
+
+	# Tick launcher fire cooldowns
+	for lname in _launcher_cooldowns.keys():
+		_launcher_cooldowns[lname] -= delta
+		if _launcher_cooldowns[lname] <= 0.0:
+			_launcher_cooldowns[lname] = 0.0
+
+	# Check missile strike opportunities every process frame (server-only)
+	_check_strike_opportunities()
 
 	_timer -= delta
 	if _timer > 0.0:
@@ -198,6 +217,12 @@ func _phase_mid(points: float) -> void:
 				if _try_place_zone(lane_i, 0.45, 0.5, tower_type, "", cost, points):
 					_placed_counts[key] = 1
 					return
+	# One missile launcher mid-phase
+	var lkey: String = "launcher_missile_0"
+	if _placed_counts.get(lkey, 0) < 1:
+		if _try_place_jungle("launcher_missile", "", float(LauncherDefs.get_build_cost("launcher_missile")), points):
+			_placed_counts[lkey] = 1
+			return
 	# Multiple jungle cannons
 	for ji in range(3):
 		var jkey: String = "jungle_cannon_%d" % ji
@@ -244,6 +269,13 @@ func _phase_late(points: float) -> void:
 		if _placed_counts.get(jkey, 0) < 1:
 			if _try_place_jungle("mortar", "", 35.0, points):
 				_placed_counts[jkey] = 1
+				return
+	# Up to 3 missile launchers late-phase
+	for li in range(3):
+		var lkey: String = "launcher_missile_%d" % li
+		if _placed_counts.get(lkey, 0) < 1:
+			if _try_place_jungle("launcher_missile", "", float(LauncherDefs.get_build_cost("launcher_missile")), points):
+				_placed_counts[lkey] = 1
 				return
 
 # ── Zone placement ────────────────────────────────────────────────────────────
@@ -319,6 +351,9 @@ func _do_place(world_pos: Vector3, item_type: String, subtype: String) -> bool:
 	LobbyManager.spawn_item_visuals.rpc(world_pos, team, item_type, subtype, assigned_name)
 	LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
 	LobbyManager.item_spawned.emit(item_type, team)
+	# Register launcher so AI can fire from it
+	if LauncherDefs.is_launcher_type(item_type):
+		_launcher_cooldowns[assigned_name] = 0.0
 	return true
 
 # ── Lane analysis ─────────────────────────────────────────────────────────────
@@ -369,3 +404,131 @@ func _lane_zone_anchor(lane_i: int, start_frac: float, end_frac: float) -> Vecto
 
 	var avg: Vector2 = sum / float(count) if count > 0 else Vector2.ZERO
 	return Vector3(avg.x, 5.0, avg.y)
+
+# ── Missile strike logic ──────────────────────────────────────────────────────
+
+# Called every _process frame. Iterates ready launchers and fires at best target.
+func _check_strike_opportunities() -> void:
+	if _launcher_cooldowns.is_empty():
+		return
+	var main: Node = get_tree().root.get_node_or_null("Main")
+	if main == null:
+		return
+
+	for lname in _launcher_cooldowns.keys():
+		if _launcher_cooldowns[lname] > 0.0:
+			continue
+		# Resolve the launcher node
+		var launcher: Node = main.get_node_or_null(lname)
+		if launcher == null:
+			# Tower was destroyed — remove tracking
+			_launcher_cooldowns.erase(lname)
+			continue
+		# Determine launcher type from node name  e.g. "Launcher_missile_10_30"
+		var launcher_type: String = _launcher_type_from_node(launcher)
+		if launcher_type == "":
+			continue
+		var fire_cost: int = LauncherDefs.get_fire_cost(launcher_type)
+		if TeamData.get_points(team) < fire_cost:
+			continue
+
+		var target: Vector3 = _best_strike_target()
+		if target == Vector3.INF:
+			continue
+
+		# Confirm target is not in enemy base exclusion zone
+		if _is_in_base_zone(target):
+			continue
+
+		var fire_pos: Vector3 = launcher.get_fire_position() if launcher.has_method("get_fire_position") \
+				else launcher.global_position + Vector3(0.0, 6.0, 0.0)
+
+		if not TeamData.spend_points(team, fire_cost):
+			continue
+
+		LobbyManager.spawn_missile_server(fire_pos, target, team, launcher_type)
+		LobbyManager.spawn_missile_visuals.rpc(fire_pos, target, team, launcher_type)
+		LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
+
+		_launcher_cooldowns[lname] = LauncherDefs.get_cooldown(launcher_type)
+		# Fire one launcher per frame maximum
+		return
+
+# Priority: deepest enemy tower → largest enemy minion cluster centroid.
+# Returns Vector3.INF if no valid target found.
+func _best_strike_target() -> Vector3:
+	var enemy_team: int = 1 - team
+	var enemy_base_z: float = -82.0 if enemy_team == 0 else 82.0
+
+	# 1) Deepest enemy tower (closest to enemy base — most forward on their half)
+	var best_tower: Node = null
+	var best_tower_depth: float = INF  # distance to enemy base z
+	for node in get_tree().get_nodes_in_group("towers"):
+		var t: int = node.get("team") if node.get("team") != null else -1
+		if t != enemy_team:
+			continue
+		var dist_to_base: float = abs(node.global_position.z - enemy_base_z)
+		if dist_to_base < best_tower_depth:
+			best_tower_depth = dist_to_base
+			best_tower = node
+	if best_tower != null:
+		var tp: Vector3 = best_tower.global_position
+		if not _is_in_base_zone(tp):
+			return tp
+
+	# 2) Largest enemy minion cluster centroid
+	return _enemy_minion_cluster_centroid(enemy_team)
+
+# Returns centroid of the densest enemy minion cluster, or Vector3.INF if none.
+func _enemy_minion_cluster_centroid(enemy_team: int) -> Vector3:
+	var minions: Array = []
+	for m in get_tree().get_nodes_in_group("minions"):
+		if m.get("team") == enemy_team:
+			minions.append(m)
+	if minions.is_empty():
+		return Vector3.INF
+
+	var best_centroid: Vector3 = Vector3.INF
+	var best_count: int = 0
+
+	for seed_m in minions:
+		var sp: Vector3 = seed_m.global_position
+		var cluster_sum: Vector3 = Vector3.ZERO
+		var cluster_count: int = 0
+		for other in minions:
+			if sp.distance_to(other.global_position) <= MINION_CLUSTER_RADIUS:
+				cluster_sum += other.global_position
+				cluster_count += 1
+		if cluster_count > best_count:
+			best_count = cluster_count
+			best_centroid = cluster_sum / float(cluster_count)
+
+	if best_count < MINION_CLUSTER_MIN:
+		return Vector3.INF
+	if _is_in_base_zone(best_centroid):
+		return Vector3.INF
+	return best_centroid
+
+# Returns true if pos is within the base exclusion zone of either base.
+func _is_in_base_zone(pos: Vector3) -> bool:
+	# Blue base z≈+82, Red base z≈-82.  Exclude anything beyond BASE_EXCLUSION_Z.
+	return abs(pos.z) >= BASE_EXCLUSION_Z
+
+# Derives launcher_type from the node's script or name.
+# Node name format: "Launcher_missile_x_z"
+func _launcher_type_from_node(launcher: Node) -> String:
+	var n: String = launcher.name
+	# Strip "Launcher_" prefix, then extract type segment before the coords
+	if not n.begins_with("Launcher_"):
+		return ""
+	var rest: String = n.substr(9)  # e.g. "missile_10_30"
+	# Find the last two underscore-separated ints (coords) and remove them
+	var parts: Array = rest.split("_")
+	if parts.size() < 3:
+		return ""
+	# type may itself contain underscores — everything except last two parts
+	var type_parts: Array = parts.slice(0, parts.size() - 2)
+	var ltype: String = "launcher_" + "_".join(type_parts)
+	if LauncherDefs.is_launcher_type(ltype):
+		return ltype
+	return ""

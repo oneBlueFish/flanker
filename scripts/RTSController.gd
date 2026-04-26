@@ -48,6 +48,7 @@ var _los_mat: StandardMaterial3D = null
 var _selected_type:    String = "cannon"
 var _selected_subtype: String = ""
 var _supporter_hud: Node = null
+var _launcher_hud: Node = null
 
 func _ready() -> void:
 	build_system = get_node_or_null("/root/Main/BuildSystem")
@@ -65,6 +66,11 @@ func set_supporter_hud(hud: Node) -> void:
 	_supporter_hud = hud
 	if hud != null:
 		hud.slot_changed.connect(_on_slot_changed)
+
+func set_launcher_hud(hud: Node) -> void:
+	_launcher_hud = hud
+	if hud != null:
+		hud.fire_requested.connect(_on_fire_requested)
 
 func _on_slot_changed(item_type: String, subtype: String) -> void:
 	_selected_type    = item_type
@@ -402,7 +408,23 @@ func _update_ghost() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not current:
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		# Cancel launcher targeting first; otherwise cancel placement selection
+		if _launcher_hud != null and is_instance_valid(_launcher_hud) and _launcher_hud.is_targeting():
+			_launcher_hud.cancel_targeting()
+			get_viewport().set_input_as_handled()
+			return
+		if player_role == 1:
+			_destroy_ghost()
+			if _supporter_hud != null and is_instance_valid(_supporter_hud):
+				_supporter_hud.deselect()
+			get_viewport().set_input_as_handled()
+			return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		# Launcher targeting mode takes priority over placement
+		if _launcher_hud != null and is_instance_valid(_launcher_hud) and _launcher_hud.is_targeting():
+			_try_fire_missile(event.position)
+			return
 		if player_role == 1:
 			_try_place_item(event.position)
 
@@ -421,6 +443,51 @@ func _try_place_item(_screen_pos: Vector2) -> void:
 	else:
 		if build_system.place_item(_ghost_world_pos, _player_team, _selected_type, _selected_subtype) != "":
 			LobbyManager.item_spawned.emit(_selected_type, _player_team)
+
+func _try_fire_missile(screen_pos: Vector2) -> void:
+	if _launcher_hud == null or not is_instance_valid(_launcher_hud):
+		return
+	# Raycast mouse to terrain
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var from: Vector3 = project_ray_origin(screen_pos)
+	var dir: Vector3  = project_ray_normal(screen_pos)
+	var to: Vector3   = from + dir * 500.0
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.collision_mask = 1
+	var result: Dictionary = space.intersect_ray(query)
+	if result.is_empty():
+		return
+	# Confirm target in LauncherHUD — it will emit fire_requested after spending points
+	_launcher_hud.confirm_target(result.position)
+
+func _on_fire_requested(launcher_name: String, launcher_type: String, target_pos: Vector3) -> void:
+	# Find the launcher node to get its fire position
+	var launcher: Node = get_tree().root.get_node_or_null("Main/" + launcher_name)
+	if launcher == null:
+		return
+	var fire_pos: Vector3 = launcher.get_fire_position() if launcher.has_method("get_fire_position") else launcher.global_position + Vector3(0.0, 6.0, 0.0)
+
+	if multiplayer.has_multiplayer_peer():
+		if multiplayer.is_server():
+			_server_spawn_missile(fire_pos, target_pos, _player_team, launcher_type)
+			LobbyManager.spawn_missile_visuals.rpc(fire_pos, target_pos, _player_team, launcher_type)
+			LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
+		else:
+			LobbyManager.request_fire_missile.rpc_id(1, launcher_name, target_pos, _player_team, launcher_type)
+	else:
+		_server_spawn_missile(fire_pos, target_pos, _player_team, launcher_type)
+
+func _server_spawn_missile(fire_pos: Vector3, target_pos: Vector3, team: int, launcher_type: String) -> void:
+	var def: Dictionary = LauncherDefs.DEFS.get(launcher_type, {})
+	if def.is_empty():
+		return
+	var missile_scene: PackedScene = load(LauncherDefs.get_missile_scene(launcher_type)) as PackedScene
+	if missile_scene == null:
+		return
+	var missile: Node3D = missile_scene.instantiate() as Node3D
+	missile.configure(def, team, fire_pos, target_pos, launcher_type)
+	get_tree().root.get_child(0).add_child(missile)
+	missile.global_position = fire_pos
 
 # ── Fog of war ───────────────────────────────────────────────────────────────
 

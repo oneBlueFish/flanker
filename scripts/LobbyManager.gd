@@ -558,6 +558,72 @@ func _type_from_node_name(node_name: String) -> String:
 		return parts[1].to_lower()
 	return "tower"
 
+# ── Launcher / Missile sync ───────────────────────────────────────────────────
+
+# Client requests the server to fire a missile from a specific launcher.
+@rpc("any_peer", "reliable")
+func request_fire_missile(launcher_name: String, target_pos: Vector3, team: int, launcher_type: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var id: int = _sender_id()
+	var info: Dictionary = players.get(id, {})
+	# Validate: sender must be Supporter on the correct team
+	if info.get("role", -1) != 1:
+		return
+	if info.get("team", -1) != team:
+		return
+	# Validate: launcher exists and belongs to this team
+	var main: Node = get_tree().root.get_node_or_null("Main")
+	if main == null:
+		return
+	var launcher: Node = main.get_node_or_null(launcher_name)
+	if launcher == null:
+		return
+	var launcher_team: int = launcher.get("team") if launcher.get("team") != null else -1
+	if launcher_team != team:
+		return
+	# Spend fire cost server-side
+	var fire_cost: int = LauncherDefs.get_fire_cost(launcher_type)
+	if not TeamData.spend_points(team, fire_cost):
+		return
+	# Get fire position
+	var fire_pos: Vector3 = launcher.get_fire_position() if launcher.has_method("get_fire_position") else launcher.global_position + Vector3(0.0, 6.0, 0.0)
+	# Spawn on server + broadcast to clients
+	_spawn_missile_server(fire_pos, target_pos, team, launcher_type)
+	spawn_missile_visuals.rpc(fire_pos, target_pos, team, launcher_type)
+	sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
+
+func spawn_missile_server(fire_pos: Vector3, target_pos: Vector3, team: int, launcher_type: String) -> void:
+	_spawn_missile_server(fire_pos, target_pos, team, launcher_type)
+
+func _spawn_missile_server(fire_pos: Vector3, target_pos: Vector3, team: int, launcher_type: String) -> void:
+	var def: Dictionary = LauncherDefs.DEFS.get(launcher_type, {})
+	if def.is_empty():
+		return
+	var missile_path: String = LauncherDefs.get_missile_scene(launcher_type)
+	var missile_scene: PackedScene = load(missile_path) as PackedScene
+	if missile_scene == null:
+		return
+	var missile: Node3D = missile_scene.instantiate() as Node3D
+	missile.configure(def, team, fire_pos, target_pos, launcher_type)
+	get_tree().root.get_child(0).add_child(missile)
+	missile.global_position = fire_pos
+
+# Executed on all remote clients — spawns the missile projectile.
+@rpc("authority", "call_remote", "reliable")
+func spawn_missile_visuals(fire_pos: Vector3, target_pos: Vector3, team: int, launcher_type: String) -> void:
+	var def: Dictionary = LauncherDefs.DEFS.get(launcher_type, {})
+	if def.is_empty():
+		return
+	var missile_path: String = LauncherDefs.get_missile_scene(launcher_type)
+	var missile_scene: PackedScene = load(missile_path) as PackedScene
+	if missile_scene == null:
+		return
+	var missile: Node3D = missile_scene.instantiate() as Node3D
+	missile.configure(def, team, fire_pos, target_pos, launcher_type)
+	get_tree().root.get_child(0).add_child(missile)
+	missile.global_position = fire_pos
+
 # ── TeamData sync ─────────────────────────────────────────────────────────────
 
 @rpc("authority", "call_remote", "reliable")

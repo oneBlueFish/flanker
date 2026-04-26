@@ -50,10 +50,12 @@ const FPSPlayerScene := preload("res://scenes/FPSPlayer.tscn")
 const MinionAI := preload("res://scripts/MinionAI.gd")
 const RoleSelectDialogScene := preload("res://scenes/RoleSelectDialog.tscn")
 const SupporterHUDScene := preload("res://scenes/SupporterHUD.tscn")
+const LauncherHUDScript := preload("res://scripts/LauncherHUD.gd")
 const AISupporterControllerScript := preload("res://scripts/AISupporterController.gd")
 const LevelUpDialogScene := preload("res://scenes/LevelUpDialog.tscn")
 
 var _supporter_hud: Node = null
+var _launcher_hud: Node = null
 var _level_up_dialog: Control = null
 
 @onready var rts_camera:         Camera3D        = $RTSCamera
@@ -250,12 +252,23 @@ func _start_multiplayer_game() -> void:
 		vitals_panel.visible = false
 		ammo_label.visible = false
 		reload_prompt.visible = false
+		$HUD/MinimapPanel.visible = false
+		$HUD/XPPanel.visible = false
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 		# Spawn SupporterHUD toolbar
 		_supporter_hud = SupporterHUDScene.instantiate()
 		$HUD.add_child(_supporter_hud)
 		_supporter_hud.setup(player_start_team)
 		rts_camera.set_supporter_hud(_supporter_hud)
+		# Spawn LauncherHUD — left-edge launcher toolbar (multiplayer)
+		_launcher_hud = CanvasLayer.new()
+		_launcher_hud.set_script(LauncherHUDScript)
+		_launcher_hud.name = "LauncherHUD"
+		$HUD.add_child(_launcher_hud)
+		_launcher_hud.setup(player_start_team)
+		rts_camera.set_launcher_hud(_launcher_hud)
+		LobbyManager.item_spawned.connect(_launcher_hud._on_item_spawned)
+		LobbyManager.tower_despawned.connect(_launcher_hud._on_tower_despawned)
 
 	call_deferred("_spawn_weapon_pickups")
 	call_deferred("_setup_lane_data")
@@ -686,11 +699,22 @@ func _on_start_game() -> void:
 		vitals_panel.visible = false
 		ammo_label.visible = false
 		reload_prompt.visible = false
+		$HUD/MinimapPanel.visible = false
+		$HUD/XPPanel.visible = false
 		# Spawn SupporterHUD toolbar
 		_supporter_hud = SupporterHUDScene.instantiate()
 		$HUD.add_child(_supporter_hud)
 		_supporter_hud.setup(player_start_team)
 		rts_camera.set_supporter_hud(_supporter_hud)
+		# Spawn LauncherHUD — left-edge launcher toolbar (singleplayer)
+		_launcher_hud = CanvasLayer.new()
+		_launcher_hud.set_script(LauncherHUDScript)
+		_launcher_hud.name = "LauncherHUD"
+		$HUD.add_child(_launcher_hud)
+		_launcher_hud.setup(player_start_team)
+		rts_camera.set_launcher_hud(_launcher_hud)
+		LobbyManager.item_spawned.connect(_launcher_hud._on_item_spawned)
+		LobbyManager.tower_despawned.connect(_launcher_hud._on_tower_despawned)
 
 	# Spawn AI Supporters for any uncovered team (singleplayer — always server)
 	_spawn_ai_supporters_singleplayer(player_role, player_start_team)
