@@ -1010,3 +1010,22 @@ func _on_human_supporter_claimed(team: int) -> void:
 	var idx: int = LobbyManager.ai_supporter_teams.find(team)
 	if idx != -1:
 		LobbyManager.ai_supporter_teams.remove_at(idx)
+
+# ── Recon Strike ──────────────────────────────────────────────────────────────
+
+# Called on all peers via LobbyManager.broadcast_recon_reveal (and directly in SP).
+# Reveals fog at target_pos for duration seconds and spawns 3D shockwave VFX.
+func apply_recon_reveal(target_pos: Vector3, reveal_radius: float, reveal_duration: float) -> void:
+	# Fog reveal — RTSController's FogOverlay (held under World)
+	var fog: Node = get_node_or_null("World/FogOverlay")
+	if fog != null and fog.has_method("add_timed_reveal"):
+		fog.call("add_timed_reveal", target_pos, reveal_radius, reveal_duration)
+
+	# Shockwave VFX — visible to FPS players in range
+	var vfx_script := load("res://scripts/ReconStrikeVFX.gd")
+	if vfx_script == null:
+		return
+	var vfx := Node3D.new()
+	vfx.set_script(vfx_script)
+	get_tree().root.get_child(0).add_child(vfx)
+	vfx.global_position = Vector3(target_pos.x, target_pos.y + 5.0, target_pos.z)

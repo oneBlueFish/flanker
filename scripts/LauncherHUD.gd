@@ -1,6 +1,7 @@
 extends CanvasLayer
 ## LauncherHUD — left-edge vertical toolbar.
 ## One button per built launcher owned by this team.
+## Also handles direct-cast strikes (e.g. recon_strike) that require no tower.
 ## Extensible: any launcher type from LauncherDefs is handled automatically.
 ##
 ## Usage:
@@ -10,6 +11,7 @@ extends CanvasLayer
 ##   RTSController calls confirm_target(world_pos) to complete a fire action.
 
 signal fire_requested(launcher_name: String, launcher_type: String, target_pos: Vector3)
+signal reveal_requested(target_pos: Vector3, reveal_radius: float, reveal_duration: float)
 
 var _player_team: int = 0
 var _scale: float = 1.0
@@ -32,6 +34,35 @@ func _ready() -> void:
 
 func setup(p_team: int) -> void:
 	_player_team = p_team
+	_register_direct_cast_strikes()
+
+# Registers all direct-cast strikes from LauncherDefs automatically.
+func _register_direct_cast_strikes() -> void:
+	for ltype in LauncherDefs.get_all_types():
+		if LauncherDefs.is_direct_cast(ltype):
+			_register_direct_strike(ltype)
+
+# Registers a direct-cast strike (no tower node required).
+func _register_direct_strike(strike_type: String) -> void:
+	# Avoid duplicates
+	for entry in _launchers:
+		if entry["type"] == strike_type and entry["name"] == "":
+			return
+	var cd: float = LauncherDefs.get_cooldown(strike_type)
+	var entry: Dictionary = {
+		"name":               "",
+		"type":               strike_type,
+		"cooldown_remaining": 0.0,
+		"cooldown_max":       cd,
+		"button_panel":       null,
+		"progress_bar":       null,
+		"status_label":       null,
+		"cost_label":         null,
+		"direct_cast":        true,
+	}
+	_launchers.append(entry)
+	_add_button(entry)
+	_refresh_button(_launchers.size() - 1)
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -39,12 +70,15 @@ func is_targeting() -> bool:
 	return _targeting
 
 # Returns the launcher node for the currently active targeting action, or null.
+# Returns null for direct-cast strikes (they have no tower node).
 func get_active_launcher() -> Node:
 	if not _targeting or _target_launcher_idx < 0:
 		return null
 	if _target_launcher_idx >= _launchers.size():
 		return null
 	var entry: Dictionary = _launchers[_target_launcher_idx]
+	if entry.get("direct_cast", false) or entry["name"] == "":
+		return null
 	return get_tree().root.get_node_or_null("Main/" + entry["name"])
 
 # Called by RTSController after the player clicks a target on the map.
@@ -65,6 +99,13 @@ func confirm_target(world_pos: Vector3) -> void:
 
 	# Start cooldown
 	entry["cooldown_remaining"] = entry["cooldown_max"]
+
+	# Direct-cast strikes emit reveal_requested instead of fire_requested
+	if entry.get("direct_cast", false):
+		var radius: float = LauncherDefs.get_reveal_radius(entry["type"])
+		var duration: float = LauncherDefs.get_reveal_duration(entry["type"])
+		reveal_requested.emit(world_pos, radius, duration)
+		return
 
 	# Emit signal so RTSController / LobbyManager can do the network call
 	fire_requested.emit(entry["name"], entry["type"], world_pos)
@@ -191,7 +232,7 @@ func _build_ui() -> void:
 
 	# Header label
 	var header := Label.new()
-	header.text = "LAUNCHERS"
+	header.text = "STRIKES"
 	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	header.add_theme_font_size_override("font_size", roundi(10.0 * sc))
 	header.add_theme_color_override("font_color", _TITLE_COLOR)
@@ -211,9 +252,12 @@ func _add_button(entry: Dictionary) -> void:
 	inner.add_theme_constant_override("separation", roundi(2.0 * _scale))
 	panel.add_child(inner)
 
-	# Launcher label (type + index)
+	# Launcher label (type + index, or just label for direct-cast strikes)
 	var name_lbl := Label.new()
-	name_lbl.text = LauncherDefs.get_label(entry["type"]) + " #%d" % (_launchers.size())
+	if entry.get("direct_cast", false):
+		name_lbl.text = LauncherDefs.get_label(entry["type"])
+	else:
+		name_lbl.text = LauncherDefs.get_label(entry["type"]) + " #%d" % (_launchers.size())
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", roundi(10.0 * _scale))
 	name_lbl.add_theme_color_override("font_color", _TITLE_COLOR)
@@ -378,6 +422,9 @@ func _on_item_spawned(item_type: String, team: int) -> void:
 		return
 	if not LauncherDefs.is_launcher_type(item_type):
 		return
+	# Direct-cast strikes are pre-registered at setup — no tower node to scan for
+	if LauncherDefs.is_direct_cast(item_type):
+		return
 	# Find the newly added launcher node by scanning the launchers group
 	# (it was just added so it won't be in _launchers yet)
 	for node in get_tree().get_nodes_in_group("launchers"):
@@ -402,6 +449,9 @@ func _on_tower_despawned(item_type: String, team: int) -> void:
 	if team != _player_team:
 		return
 	if not LauncherDefs.is_launcher_type(item_type):
+		return
+	# Direct-cast strikes have no tower to despawn
+	if LauncherDefs.is_direct_cast(item_type):
 		return
 	# The node is already freed by the time this fires, so match by type
 	# and remove the first entry of this type that no longer has a live node.

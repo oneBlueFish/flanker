@@ -661,3 +661,30 @@ func sync_destroy_tree(pos: Vector3) -> void:
 	var tp: Node = get_tree().root.get_node_or_null("Main/World/TreePlacer")
 	if tp != null:
 		tp.clear_trees_at(pos, TREE_DESTROY_RADIUS)
+
+# ── Recon strike (fog reveal) sync ───────────────────────────────────────────
+
+# Client requests server to broadcast a recon reveal for their team.
+@rpc("any_peer", "reliable")
+func request_recon_reveal(target_pos: Vector3, reveal_radius: float, reveal_duration: float, team: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var id: int = _sender_id()
+	var info: Dictionary = players.get(id, {})
+	# Validate: sender must be Supporter on the correct team
+	if info.get("role", -1) != 1:
+		return
+	if info.get("team", -1) != team:
+		return
+	# Spend fire cost server-side
+	if not TeamData.spend_points(team, LauncherDefs.get_fire_cost("recon_strike")):
+		return
+	broadcast_recon_reveal.rpc(target_pos, reveal_radius, reveal_duration, team)
+	sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
+
+# Executed on every peer — triggers fog reveal + VFX on all clients.
+@rpc("authority", "call_local", "reliable")
+func broadcast_recon_reveal(target_pos: Vector3, reveal_radius: float, reveal_duration: float, team: int) -> void:
+	var main: Node = get_tree().root.get_node_or_null("Main")
+	if main != null and main.has_method("apply_recon_reveal"):
+		main.apply_recon_reveal(target_pos, reveal_radius, reveal_duration)

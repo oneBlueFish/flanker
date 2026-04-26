@@ -7,28 +7,49 @@ class_name LauncherDefs
 # ── Launcher type definitions ─────────────────────────────────────────────────
 # Keys:
 #   label          String   — display name in HUD
-#   build_cost     int      — team points to place the launcher tower
+#   build_cost     int      — team points to place the launcher tower (0 = direct cast, no tower)
 #   fire_cost      int      — team points consumed each time the launcher fires
 #   cooldown       float    — seconds before this launcher can fire again
-#   health         int      — launcher tower hit points
-#   blast_radius   float    — AoE sphere radius at impact
-#   blast_damage   float    — damage to all targets inside blast radius
+#   health         int      — launcher tower hit points (0 = direct cast, no tower)
+#   blast_radius   float    — AoE sphere radius at impact (0 = no damage)
+#   blast_damage   float    — damage to all targets inside blast radius (0 = no damage)
 #   flight_time    float    — seconds for missile to reach target (controls arc height)
-#   missile_scene  String   — PackedScene path for the projectile
+#   missile_scene  String   — PackedScene path for the projectile ("" = direct cast)
+#   reveal_radius  float    — fog-of-war reveal radius in world units (0 = no reveal)
+#   reveal_duration float   — seconds the fog reveal lasts (0 = no reveal)
+#   direct_cast    bool     — true = no tower required; triggered directly from LauncherHUD
 #   icon           Texture2D or null (future use)
 
 const DEFS: Dictionary = {
 	"launcher_missile": {
-		"label":         "Missile",
-		"build_cost":    50,
-		"fire_cost":     150,
-		"cooldown":      90.0,
-		"health":        600,
-		"blast_radius":  12.0,
-		"blast_damage":  950.0,
-		"flight_time":   4.0,
-		"missile_scene": "res://scenes/Missile.tscn",
-		"icon":          null,
+		"label":           "Missile",
+		"build_cost":      50,
+		"fire_cost":       150,
+		"cooldown":        90.0,
+		"health":          600,
+		"blast_radius":    12.0,
+		"blast_damage":    950.0,
+		"flight_time":     4.0,
+		"missile_scene":   "res://scenes/Missile.tscn",
+		"reveal_radius":   0.0,
+		"reveal_duration": 0.0,
+		"direct_cast":     false,
+		"icon":            null,
+	},
+	"recon_strike": {
+		"label":           "Recon",
+		"build_cost":      0,
+		"fire_cost":       100,
+		"cooldown":        120.0,
+		"health":          0,
+		"blast_radius":    0.0,
+		"blast_damage":    0.0,
+		"flight_time":     0.0,
+		"missile_scene":   "",
+		"reveal_radius":   40.0,
+		"reveal_duration": 5.0,
+		"direct_cast":     true,
+		"icon":            null,
 	},
 	# ── Future launcher types ─────────────────────────────────────────────────
 	# "launcher_cluster": {
@@ -82,3 +103,12 @@ static func get_missile_scene(launcher_type: String) -> String:
 
 static func get_label(launcher_type: String) -> String:
 	return str(DEFS.get(launcher_type, {}).get("label", launcher_type.capitalize()))
+
+static func get_reveal_radius(launcher_type: String) -> float:
+	return float(DEFS.get(launcher_type, {}).get("reveal_radius", 0.0))
+
+static func get_reveal_duration(launcher_type: String) -> float:
+	return float(DEFS.get(launcher_type, {}).get("reveal_duration", 0.0))
+
+static func is_direct_cast(launcher_type: String) -> bool:
+	return bool(DEFS.get(launcher_type, {}).get("direct_cast", false))

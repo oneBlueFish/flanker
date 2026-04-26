@@ -1,6 +1,6 @@
 extends CanvasLayer
 ## Supporter HUD — horizontal toolbar for selecting what to place.
-## Hotkeys 1-8 or click to select. Slot 6 = weapon sub-row.
+## Hotkeys 1-9 or click to select. Slot 6 = weapon sub-row.
 
 signal slot_changed(item_type: String, subtype: String)
 
@@ -13,6 +13,7 @@ const SLOT_DEFS := [
 	{ "key": "6", "type": "healthpack",       "subtype": "",       "label": "HealthPack","cost_key": "healthpack"       },
 	{ "key": "7", "type": "healstation",      "subtype": "",       "label": "HealStation","cost_key": "healstation"     },
 	{ "key": "8", "type": "launcher_missile", "subtype": "",       "label": "Launcher",  "cost_key": "launcher_missile" },
+	{ "key": "9", "type": "recon_strike",    "subtype": "",       "label": "Recon",     "cost_key": "recon_strike"     },
 ]
 
 const WEAPON_SUBTYPES := ["pistol", "rifle", "heavy", "rocket_launcher"]
@@ -21,7 +22,7 @@ const WEAPON_LABELS   := { "pistol": "Pistol", "rifle": "Rifle", "heavy": "Heavy
 const PLACEABLE_COSTS := {
 	"cannon": 25, "mortar": 35,
 	"slow": 30, "barrier": 10, "healthpack": 15, "healstation": 25,
-	"launcher_missile": 50,
+	"launcher_missile": 50, "recon_strike": 100,
 }
 
 var selected_type:    String = ""

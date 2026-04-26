@@ -7,6 +7,9 @@ const MAX_SOURCES := 64
 var _mat: ShaderMaterial = null
 var _sources_buf: Array[Vector4] = []
 
+# Timed reveal entries: { pos: Vector3, radius: float, time_left: float }
+var _timed_reveals: Array = []
+
 func _ready() -> void:
 	_build_mesh()
 	visible = false
@@ -82,9 +85,32 @@ func update_sources(player_pos: Vector3, player_radius: float,
 		_sources_buf[count] = Vector4(pos.x, pos.z, tower_radius, 0.0)
 		count += 1
 
+	# Timed reveals (recon strike, etc.)
+	for reveal in _timed_reveals:
+		if count >= MAX_SOURCES:
+			break
+		var rpos: Vector3 = reveal["pos"]
+		_sources_buf[count] = Vector4(rpos.x, rpos.z, reveal["radius"], 0.0)
+		count += 1
+
 	# Zero out remaining slots
 	for i in range(count, MAX_SOURCES):
 		_sources_buf[i] = Vector4(0, 0, 0, 0)
 
 	_mat.set_shader_parameter("sources", _sources_buf)
 	_mat.set_shader_parameter("source_count", count)
+
+# Add a temporary fog-of-war reveal at the given world position.
+func add_timed_reveal(pos: Vector3, radius: float, duration: float) -> void:
+	_timed_reveals.append({ "pos": pos, "radius": radius, "time_left": duration })
+
+func _process(delta: float) -> void:
+	_tick_timed_reveals(delta)
+
+func _tick_timed_reveals(delta: float) -> void:
+	var i := _timed_reveals.size() - 1
+	while i >= 0:
+		_timed_reveals[i]["time_left"] -= delta
+		if _timed_reveals[i]["time_left"] <= 0.0:
+			_timed_reveals.remove_at(i)
+		i -= 1

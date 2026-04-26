@@ -71,6 +71,7 @@ func set_launcher_hud(hud: Node) -> void:
 	_launcher_hud = hud
 	if hud != null:
 		hud.fire_requested.connect(_on_fire_requested)
+		hud.reveal_requested.connect(_on_reveal_requested)
 
 func _on_slot_changed(item_type: String, subtype: String) -> void:
 	_selected_type    = item_type
@@ -119,6 +120,9 @@ func _build_ghost_materials() -> void:
 
 func _create_ghost() -> void:
 	if _ghost != null and is_instance_valid(_ghost):
+		return
+	# Direct-cast strikes (recon_strike etc.) have no placement ghost
+	if LauncherDefs.is_direct_cast(_selected_type):
 		return
 	var packed := load(TOWER_MODEL_PATH) as PackedScene
 	if packed == null:
@@ -429,6 +433,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_try_place_item(event.position)
 
 func _try_place_item(_screen_pos: Vector2) -> void:
+	# Direct-cast strikes are handled via LauncherHUD targeting, not placement
+	if LauncherDefs.is_direct_cast(_selected_type):
+		return
 	if build_system == null or not _ghost_valid:
 		return
 	if multiplayer.has_multiplayer_peer():
@@ -488,6 +495,19 @@ func _server_spawn_missile(fire_pos: Vector3, target_pos: Vector3, team: int, la
 	missile.configure(def, team, fire_pos, target_pos, launcher_type)
 	get_tree().root.get_child(0).add_child(missile)
 	missile.global_position = fire_pos
+
+func _on_reveal_requested(target_pos: Vector3, reveal_radius: float, reveal_duration: float) -> void:
+	if multiplayer.has_multiplayer_peer():
+		if multiplayer.is_server():
+			LobbyManager.broadcast_recon_reveal.rpc(target_pos, reveal_radius, reveal_duration, _player_team)
+			LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
+		else:
+			LobbyManager.request_recon_reveal.rpc_id(1, target_pos, reveal_radius, reveal_duration, _player_team)
+	else:
+		# Singleplayer — apply directly via Main
+		var main: Node = get_node_or_null("/root/Main")
+		if main != null and main.has_method("apply_recon_reveal"):
+			main.apply_recon_reveal(target_pos, reveal_radius, reveal_duration)
 
 # ── Fog of war ───────────────────────────────────────────────────────────────
 
