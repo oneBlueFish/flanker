@@ -114,12 +114,10 @@ func _build_ghost_materials() -> void:
 func _create_ghost() -> void:
 	if _ghost != null and is_instance_valid(_ghost):
 		return
-	var gltf := GLTFDocument.new()
-	var state := GLTFState.new()
-	var err := gltf.append_from_file(TOWER_MODEL_PATH, state)
-	if err != OK:
+	var packed := load(TOWER_MODEL_PATH) as PackedScene
+	if packed == null:
 		return
-	var root: Node3D = gltf.generate_scene(state)
+	var root := packed.instantiate() as Node3D
 	if root == null:
 		return
 

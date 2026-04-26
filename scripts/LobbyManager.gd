@@ -51,7 +51,7 @@ func register_player_local(peer_id: int, new_player_name: String) -> void:
 	var player_info := {
 		"name": new_player_name,
 		"team": assigned_team,
-		"role": "",
+		"role": -1,
 		"ready": false,
 		"avatar_char": ""
 	}
@@ -490,7 +490,7 @@ func request_place_item(world_pos: Vector3, team: int, item_type: String, subtyp
 	if info.get("team", -1) != team:
 		return
 	# Only Supporters (role == 1) may place items
-	if info.get("role", 0) != 1:
+	if info.get("role", -1) != 1:
 		return
 	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
 	if build_sys == null:
