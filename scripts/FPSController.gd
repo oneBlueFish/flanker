@@ -327,31 +327,6 @@ func _load_default_weapon() -> void:
 		weapons[0] = default_weapon
 		_slot_ammo[0] = [default_weapon.magazine_size, default_weapon.reserve_ammo]
 
-func drop_weapons() -> void:
-	for i in range(weapons.size()):
-		var w: WeaponData = weapons[i]
-		if w == null:
-			continue
-		var mag: int = _slot_ammo[i][0]
-		var reserve: int = _slot_ammo[i][1]
-		if mag + reserve == 0:
-			continue
-		var drop_dict: Dictionary = {
-			"weapon_name": w.weapon_name,
-			"magazine_size": mag,
-			"reserve_ammo": reserve,
-		}
-		var drop_pos: Vector3 = global_position
-		drop_pos.y = global_position.y - 0.5
-		if not multiplayer.has_multiplayer_peer():
-			LobbyManager.spawn_dropped_weapon(drop_dict, drop_pos)
-		elif multiplayer.is_server():
-			LobbyManager.spawn_dropped_weapon.rpc(drop_dict, drop_pos)
-		else:
-			LobbyManager.request_drop_weapon.rpc_id(1, drop_dict, drop_pos)
-		weapons[i] = null
-		_slot_ammo[i] = [0, 0]
-
 func _apply_role_stats() -> void:
 	if player_role.is_empty():
 		return
@@ -425,7 +400,6 @@ func pick_up_weapon(w: WeaponData) -> void:
 	emit_signal("weapon_changed", active_slot, w)
 
 func _on_death() -> void:
-	drop_weapons()
 	_dead         = true
 	active        = false
 	camera.current = false
@@ -763,7 +737,9 @@ func _shoot() -> void:
 			if multiplayer.is_server():
 				LobbyManager.spawn_bullet_visuals.rpc(shoot_from.global_position, dir, w.damage, player_team, _peer_id, "rocket")
 			else:
-				LobbyManager.validate_shot.rpc_id(1, shoot_from.global_position, dir, w.damage * player_damage_mult * _get_level_damage_mult(), player_team, _peer_id, {}, "rocket")
+				var rocket_hit_info: Dictionary = _local_raycast_hit(shoot_from.global_position, dir)
+				print("[CLIENT rocket] hit_info=", rocket_hit_info, " origin=", shoot_from.global_position, " dir=", dir)
+				LobbyManager.validate_shot.rpc_id(1, shoot_from.global_position, dir, w.damage * player_damage_mult * _get_level_damage_mult(), player_team, _peer_id, rocket_hit_info, "rocket")
 	else:
 		var bullet: Node3D = BulletScene.instantiate()
 		bullet.damage        = w.damage * player_damage_mult * _get_level_damage_mult()
@@ -808,6 +784,7 @@ func _local_raycast_hit(origin: Vector3, dir: Vector3) -> Dictionary:
 	var node: Node = result.collider if result.collider is Node else null
 	if node == null:
 		return {}
+	print("[CLIENT raycast] hit=", node.name, " class=", node.get_class(), " groups=", node.get_groups())
 	var check: Node = node
 	while check != null and check != get_tree().root:
 		if check == self:
@@ -831,7 +808,15 @@ func _local_raycast_hit(origin: Vector3, dir: Vector3) -> Dictionary:
 			if mteam == player_team:
 				return {}
 			return {"minion_id": mid}
+		# Tower hit — report hit position to server for proximity lookup
+		if check.is_in_group("towers"):
+			print("[CLIENT raycast] tower match on node: ", check.name)
+			return {"tower_pos": result.position}
+		if check.get_parent() != null and check.get_parent().is_in_group("towers"):
+			print("[CLIENT raycast] tower match on parent: ", check.get_parent().name)
+			return {"tower_pos": result.position}
 		check = check.get_parent()
+	print("[CLIENT raycast] no hit_info match for: ", node.name)
 	return {}
 
 func _start_reload() -> void:

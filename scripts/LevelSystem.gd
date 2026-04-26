@@ -5,7 +5,7 @@ extends Node
 const MAX_LEVEL := 12
 
 # XP required to reach level N+1 (index 0 = level 1→2, index 10 = level 11→12)
-const XP_PER_LEVEL: Array[int] = [100, 200, 350, 550, 800, 1100, 1450, 1850, 2300, 2800, 3350]
+const XP_PER_LEVEL: Array[int] = [70, 140, 250, 390, 560, 770, 1020, 1300, 1610, 1960, 2350]
 
 # Attribute points awarded on reaching each level (index 0 = level 2, index 10 = level 12)
 const POINTS_PER_LEVEL: Array[int] = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3]

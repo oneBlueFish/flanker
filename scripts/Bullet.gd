@@ -120,7 +120,7 @@ func _spawn_sparks(pos: Vector3, hit: Object) -> void:
 func _get_hit_type(hit: Object) -> String:
 	if hit is StaticBody3D and hit.has_meta("ghost_peer_id"):
 		return "player"
-	if hit is StaticBody3D and (hit.has_meta("is_tower") or (hit.get_parent() != null and hit.get_parent().has_meta("is_tower"))):
+	if hit is StaticBody3D and (hit.is_in_group("towers") or (hit.get_parent() != null and hit.get_parent().is_in_group("towers"))):
 		return "tower"
 	if hit.has_method("take_damage"):
 		var hit_team: int = hit.get("team") if hit.get("team") != null else -999

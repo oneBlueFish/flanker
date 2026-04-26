@@ -28,7 +28,6 @@ func _ready() -> void:
 	NetworkManager.server_disconnected.connect(_on_server_disconnected)
 	_init_bullet_sync()
 	_init_minion_sync()
-	_init_weapon_drop()
 	GameSync.player_respawned.connect(_on_game_sync_player_respawned)
 
 func _on_game_sync_player_respawned(peer_id: int, spawn_pos: Vector3) -> void:
@@ -258,7 +257,7 @@ func spawn_bullet_visuals(pos: Vector3, dir: Vector3, damage: float, shooter_tea
 		rocket.source          = "rocket"
 		rocket.shooter_team    = shooter_team
 		rocket.shooter_peer_id = shooter_peer_id
-		rocket.velocity        = dir * 8.0   # initial speed, Rocket.gd accelerates from here
+		rocket.velocity        = dir * 0.1   # initial speed, Rocket.gd accelerates from here
 		get_tree().root.get_child(0).add_child(rocket)
 		rocket.global_position = pos
 		return
@@ -329,6 +328,7 @@ func broadcast_player_transform(peer_id: int, pos: Vector3, rot: Vector3, team: 
 func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_team: int, shooter_peer: int, hit_info: Dictionary = {}, projectile_type: String = "bullet") -> void:
 	if not multiplayer.is_server():
 		return
+	print("[SERVER validate_shot] peer=", shooter_peer, " type=", projectile_type, " hit_info=", hit_info)
 
 	# --- Client-reported hit path (avoids server raycast hitting FPSPlayer_1) ---
 	if not hit_info.is_empty():
@@ -341,6 +341,23 @@ func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_t
 					var mpos: Vector3 = minion.global_position
 					if mpos.distance_to(origin) <= 550.0:
 						minion.take_damage(damage, "player", shooter_team, shooter_peer)
+		elif hit_info.has("tower_pos"):
+			var tpos: Vector3 = hit_info["tower_pos"] as Vector3
+			var towers: Array = get_tree().get_nodes_in_group("towers")
+			print("[SERVER tower hit] reported_pos=", tpos, " tower_count=", towers.size())
+			var best: Node = null
+			var best_dist: float = 5.0
+			for t in towers:
+				var d: float = (t as Node3D).global_position.distance_to(tpos)
+				if d < best_dist:
+					best_dist = d
+					best = t
+			print("[SERVER tower hit] best=", best, " best_dist=", best_dist)
+			if best != null and best.has_method("take_damage"):
+				var tower_dmg: float = damage
+				if projectile_type == "rocket":
+					tower_dmg = damage * 3.0  # matches Rocket.gd TOWER_MULT
+				best.take_damage(tower_dmg, "player", shooter_team, shooter_peer)
 		elif hit_info.has("peer_id"):
 			var target_peer: int = hit_info["peer_id"] as int
 			if target_peer != shooter_peer and not GameSync.player_dead.get(target_peer, false):
@@ -460,8 +477,9 @@ func request_place_item(world_pos: Vector3, team: int, item_type: String, subtyp
 	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
 	if build_sys == null:
 		return
-	if build_sys.place_item(world_pos, team, item_type, subtype):
-		spawn_item_visuals.rpc(world_pos, team, item_type, subtype)
+	var assigned_name: String = build_sys.place_item(world_pos, team, item_type, subtype)
+	if assigned_name != "":
+		spawn_item_visuals.rpc(world_pos, team, item_type, subtype, assigned_name)
 		sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
 
 # Legacy alias — still works for any old callers
@@ -470,10 +488,10 @@ func request_place_tower(world_pos: Vector3, team: int) -> void:
 	request_place_item(world_pos, team, "cannon", "")
 
 @rpc("authority", "call_remote", "reliable")
-func spawn_item_visuals(world_pos: Vector3, team: int, item_type: String, subtype: String) -> void:
+func spawn_item_visuals(world_pos: Vector3, team: int, item_type: String, subtype: String, node_name: String = "") -> void:
 	var build_sys: Node = get_tree().root.get_node_or_null("Main/BuildSystem")
 	if build_sys != null and build_sys.has_method("spawn_item_local"):
-		build_sys.spawn_item_local(world_pos, team, item_type, subtype)
+		build_sys.spawn_item_local(world_pos, team, item_type, subtype, node_name)
 	item_spawned.emit(item_type, team)
 
 # Legacy alias
@@ -500,45 +518,6 @@ func despawn_drop(node_name: String) -> void:
 	var node: Node = main.get_node_or_null(node_name)
 	if node != null:
 		node.queue_free()
-
-# ── Weapon drop on death sync ───────────────────────────────────────────────────
-
-var _weapon_drop_scene: PackedScene
-
-const _WEAPON_DROP_PATHS: Dictionary = {
-	"Pistol":        "res://assets/weapons/weapon_pistol.tres",
-	"Rifle":         "res://assets/weapons/weapon_rifle.tres",
-	"Heavy Blaster": "res://assets/weapons/weapon_heavy.tres",
-}
-
-func _init_weapon_drop() -> void:
-	_weapon_drop_scene = preload("res://scenes/WeaponPickup.tscn")
-
-@rpc("any_peer", "reliable")
-func request_drop_weapon(drop_dict: Dictionary, drop_pos: Vector3) -> void:
-	if not multiplayer.is_server():
-		return
-	spawn_dropped_weapon.rpc(drop_dict, drop_pos)
-
-@rpc("authority", "call_local", "reliable")
-func spawn_dropped_weapon(drop_dict: Dictionary, drop_pos: Vector3) -> void:
-	if _weapon_drop_scene == null:
-		_weapon_drop_scene = preload("res://scenes/WeaponPickup.tscn")
-	var wname: String = drop_dict.get("weapon_name", "") as String
-	var path: String = _WEAPON_DROP_PATHS.get(wname, "") as String
-	if path == "":
-		return
-	var drop_data: WeaponData = load(path).duplicate()
-	drop_data.magazine_size = drop_dict.get("magazine_size", 0) as int
-	drop_data.reserve_ammo  = drop_dict.get("reserve_ammo",  0) as int
-	var main: Node = get_tree().root.get_node_or_null("Main")
-	if main == null:
-		return
-	var pickup: Node3D = _weapon_drop_scene.instantiate()
-	pickup.weapon_data = drop_data
-	pickup.position = drop_pos
-	main.add_child(pickup)
-	pickup.add_to_group("weapon_pickups")
 
 # Called by server when a tower or heal station dies — removes it on all peers.
 @rpc("authority", "call_local", "reliable")

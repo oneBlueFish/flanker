@@ -313,9 +313,10 @@ func _terrain_y(x: float, z: float) -> float:
 	return result.position.y
 
 func _do_place(world_pos: Vector3, item_type: String, subtype: String) -> bool:
-	if not build_system.place_item(world_pos, team, item_type, subtype):
+	var assigned_name: String = build_system.place_item(world_pos, team, item_type, subtype)
+	if assigned_name == "":
 		return false
-	LobbyManager.spawn_item_visuals.rpc(world_pos, team, item_type, subtype)
+	LobbyManager.spawn_item_visuals.rpc(world_pos, team, item_type, subtype, assigned_name)
 	LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
 	LobbyManager.item_spawned.emit(item_type, team)
 	return true

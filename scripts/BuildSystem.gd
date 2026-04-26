@@ -83,31 +83,30 @@ func can_place(world_pos: Vector3, team: int) -> bool:
 
 # ── Placement execution ───────────────────────────────────────────────────────
 
-func place_item(world_pos: Vector3, team: int, item_type: String, subtype: String) -> bool:
+func place_item(world_pos: Vector3, team: int, item_type: String, subtype: String) -> String:
 	world_pos.x = snappedf(world_pos.x, 2.0)
 	world_pos.z = snappedf(world_pos.z, 2.0)
 
 	if not can_place_item(world_pos, team, item_type):
-		return false
+		return ""
 
 	var cost: int = get_item_cost(item_type, subtype)
 	if not TeamData.spend_points(team, cost):
-		return false
+		return ""
 
-	spawn_item_local(world_pos, team, item_type, subtype)
-	return true
+	return spawn_item_local(world_pos, team, item_type, subtype)
 
 # Legacy shim
 func place_tower(world_pos: Vector3, team: int) -> bool:
-	return place_item(world_pos, team, "cannon", "")
+	return place_item(world_pos, team, "cannon", "") != ""
 
-func spawn_item_local(world_pos: Vector3, team: int, item_type: String, subtype: String) -> void:
+func spawn_item_local(world_pos: Vector3, team: int, item_type: String, subtype: String, forced_name: String = "") -> String:
 	var scene: PackedScene = _loaded_scenes.get(item_type)
 	if scene == null:
 		scene = load(PLACEABLE_DEFS[item_type]["scene"])
 		if scene == null:
 			push_error("BuildSystem: scene not found for type=" + item_type)
-			return
+			return ""
 
 	var node: Node = scene.instantiate()
 	node.global_position = world_pos
@@ -124,8 +123,10 @@ func spawn_item_local(world_pos: Vector3, team: int, item_type: String, subtype:
 		if wd != null:
 			node.set("weapon_data", wd)
 
-	# Assign deterministic names so all peers can despawn by name
-	if item_type in ["healthpack", "weapon"]:
+	# Use server-assigned name if provided, otherwise compute deterministically
+	if forced_name != "":
+		node.name = forced_name
+	elif item_type in ["healthpack", "weapon"]:
 		var sx: int = int(world_pos.x)
 		var sz: int = int(world_pos.z)
 		node.name = "Drop_%s_%d_%d" % [item_type, sx, sz]
@@ -161,6 +162,8 @@ func spawn_item_local(world_pos: Vector3, team: int, item_type: String, subtype:
 	var tree_placer: Node = main.get_node_or_null("World/TreePlacer")
 	if tree_placer and tree_placer.has_method("clear_trees_at"):
 		tree_placer.clear_trees_at(world_pos, 5.0)
+
+	return node.name
 
 # Legacy shim
 func spawn_tower_local(world_pos: Vector3, team: int) -> void:

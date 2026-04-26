@@ -413,14 +413,15 @@ func _try_place_item(_screen_pos: Vector2) -> void:
 		return
 	if multiplayer.has_multiplayer_peer():
 		if multiplayer.is_server():
-			if build_system.place_item(_ghost_world_pos, _player_team, _selected_type, _selected_subtype):
-				LobbyManager.spawn_item_visuals.rpc(_ghost_world_pos, _player_team, _selected_type, _selected_subtype)
+			var assigned_name: String = build_system.place_item(_ghost_world_pos, _player_team, _selected_type, _selected_subtype)
+			if assigned_name != "":
+				LobbyManager.spawn_item_visuals.rpc(_ghost_world_pos, _player_team, _selected_type, _selected_subtype, assigned_name)
 				LobbyManager.sync_team_points.rpc(TeamData.get_points(0), TeamData.get_points(1))
 				LobbyManager.item_spawned.emit(_selected_type, _player_team)
 		else:
 			LobbyManager.request_place_item.rpc_id(1, _ghost_world_pos, _player_team, _selected_type, _selected_subtype)
 	else:
-		if build_system.place_item(_ghost_world_pos, _player_team, _selected_type, _selected_subtype):
+		if build_system.place_item(_ghost_world_pos, _player_team, _selected_type, _selected_subtype) != "":
 			LobbyManager.item_spawned.emit(_selected_type, _player_team)
 
 # ── Fog of war ───────────────────────────────────────────────────────────────
