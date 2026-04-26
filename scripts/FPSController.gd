@@ -128,7 +128,7 @@ signal weapon_changed(slot: int, weapon: WeaponData)
 @onready var shoot_audio: AudioStreamPlayer3D = $ShootAudio
 
 const CAMERA_SHAKE_SPEED := 20.0
-const CAMERA_SHAKE_AMP := 0.15
+const CAMERA_SHAKE_AMP := 0.45
 
 var camera_shake_time := 0.0
 var _base_cam_y := 0.0
@@ -149,6 +149,10 @@ func _ready() -> void:
 		# Note: info.role is Fighter/Supporter int (0/1) — not a combat class string.
 		# FPSController.player_role is a ROLE_STATS key (e.g. "DPS"). Don't assign from lobby.
 	
+	# Register with LevelSystem so bonuses are available immediately
+	if _is_local:
+		LevelSystem.register_peer(_peer_id)
+	
 	# Register with GameSync so host can track us
 	if _is_local:
 		GameSync.set_player_team(_peer_id, player_team)
@@ -158,6 +162,8 @@ func _ready() -> void:
 		GameSync.player_health_changed.connect(_on_game_sync_health_changed)
 		if _has_network_peer and not multiplayer.is_server():
 			LobbyManager.register_player_team.rpc_id(1, _peer_id, player_team)
+		# Reconnect level bonuses when attributes are spent
+		LevelSystem.attribute_spent.connect(_on_level_attribute_spent)
 	
 	_load_default_weapon()
 	_refresh_viewmodel()
@@ -258,28 +264,51 @@ func _find_anim_player(node: Node) -> AnimationPlayer:
 			return found
 	return null
 
+func _on_level_attribute_spent(peer_id: int, _attr: String, _new_attrs: Dictionary) -> void:
+	if peer_id != _peer_id:
+		return
+	# Recompute health cap — increase current HP by the bonus delta
+	var new_max: float = _get_max_hp()
+	if hp > new_max:
+		hp = new_max
+	_update_health_bar()
+
+func _get_level_speed_mult() -> float:
+	return 1.0 + LevelSystem.get_bonus_speed_mult(_peer_id)
+
+func _get_level_damage_mult() -> float:
+	return 1.0 + LevelSystem.get_bonus_damage_mult(_peer_id)
+
 func set_active(is_active: bool) -> void:
 	active = is_active
 	if not _dead:
 		camera.current = is_active
 
-func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
+func take_damage(amount: float, _source: String, _killer_team: int = -1, killer_peer_id: int = -1) -> void:
 	if _dead:
 		return
 	hp = max(0.0, hp - amount)
-	camera_shake_time = 0.15
+	camera_shake_time = 0.35
+	var _main := get_tree().current_scene
+	if _main != null and _main.has_method("flash_damage"):
+		_main.flash_damage()
 	_update_health_bar()
 	if hp <= 0.0:
 		_on_death()
 		var awarding_team: int = _killer_team if _killer_team >= 0 else 1
 		TeamData.add_points(awarding_team, 50)
 		_update_points_label()
+		# Singleplayer: award XP to killer
+		if killer_peer_id > 0 and not multiplayer.has_multiplayer_peer():
+			LevelSystem.award_xp(killer_peer_id, LevelSystem.XP_PLAYER)
+
+func _get_max_hp() -> float:
+	return (DEFAULT_HP * player_health_mult) + LevelSystem.get_bonus_hp(_peer_id)
 
 func heal(amount: float) -> void:
 	if _dead:
 		return
-	var max_hp: float = DEFAULT_HP * player_health_mult
-	hp = min(hp + amount, max_hp)
+	hp = min(hp + amount, _get_max_hp())
 	_update_health_bar()
 
 func apply_slow(duration: float, mult: float) -> void:
@@ -308,7 +337,7 @@ func _apply_role_stats() -> void:
 
 func respawn(spawn_pos: Vector3) -> void:
 	_dead        = false
-	var max_hp: float = DEFAULT_HP * player_health_mult
+	var max_hp: float = _get_max_hp()
 	hp           = max_hp
 	global_position = spawn_pos
 	velocity     = Vector3.ZERO
@@ -617,7 +646,7 @@ func _physics_process(delta: float) -> void:
 	_update_stamina_bar()
 
 	# Movement
-	var cur_speed: float = SPEED * player_speed_mult * _slow_mult
+	var cur_speed: float = SPEED * player_speed_mult * _slow_mult * _get_level_speed_mult()
 	if _crouching:
 		cur_speed = CROUCH_SPEED
 	elif want_sprint and _stamina > 0.0 and not _stamina_exhausted:
@@ -691,21 +720,26 @@ func _shoot() -> void:
 		shoot_audio.play()
 
 	var bullet: Node3D = BulletScene.instantiate()
-	bullet.damage        = w.damage
+	bullet.damage        = w.damage * player_damage_mult * _get_level_damage_mult()
 	bullet.source        = "player"
 	bullet.shooter_team  = player_team
+	bullet.set_meta("shooter_peer_id", _peer_id)
+	bullet.set("shooter_peer_id", _peer_id)
 	var dir: Vector3     = -camera.global_transform.basis.z
 	bullet.velocity      = dir * w.bullet_speed
 	get_tree().root.get_child(0).add_child(bullet)
 	bullet.global_position = shoot_from.global_position
+	var main: Node = get_tree().root.get_node("Main")
+	if main.has_method("_on_bullet_hit_something") and bullet.shooter_peer_id == _peer_id:
+		bullet.hit_something.connect(main._on_bullet_hit_something)
 
 	# Send to host for authoritative validation + broadcast to other clients
 	if multiplayer.has_multiplayer_peer():
 		if multiplayer.is_server():
-			LobbyManager.spawn_bullet_visuals.rpc(shoot_from.global_position, dir, w.damage, player_team)
+			LobbyManager.spawn_bullet_visuals.rpc(shoot_from.global_position, dir, w.damage, player_team, _peer_id)
 		else:
 			var hit_info: Dictionary = _local_raycast_hit(shoot_from.global_position, dir)
-			LobbyManager.validate_shot.rpc_id(1, shoot_from.global_position, dir, w.damage * player_damage_mult, player_team, _peer_id, hit_info)
+			LobbyManager.validate_shot.rpc_id(1, shoot_from.global_position, dir, w.damage * player_damage_mult * _get_level_damage_mult(), player_team, _peer_id, hit_info)
 
 	_update_ammo_hud()
 	_report_ammo_to_server()
@@ -863,7 +897,10 @@ func _on_game_sync_health_changed(peer_id: int, new_hp: float) -> void:
 	if _dead:
 		return
 	hp = new_hp
-	camera_shake_time = 0.15
+	camera_shake_time = 0.35
+	var _main := get_tree().current_scene
+	if _main != null and _main.has_method("flash_damage"):
+		_main.flash_damage()
 	_update_health_bar()
 	if hp <= 0.0:
 		_on_death()

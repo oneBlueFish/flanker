@@ -1,5 +1,7 @@
 extends Node3D
 
+signal hit_something(hit_type: String)
+
 const BULLET_GRAVITY := 18.0
 const MAX_LIFETIME   := 3.0
 
@@ -7,6 +9,7 @@ var velocity: Vector3    = Vector3.ZERO
 var damage: float        = 10.0
 var source: String       = "unknown"
 var shooter_team: int    = -1   # -1 = player, 0/1 = minion team
+var shooter_peer_id: int = -1   # peer_id of the firing player (-1 = minion/unknown)
 
 var _age: float = 0.0
 var _mesh_inst: MeshInstance3D = null
@@ -40,15 +43,18 @@ func _process(delta: float) -> void:
 				var ghost_team: int = GameSync.get_player_team(target_peer)
 				var friendly: bool = (shooter_team >= 0 and ghost_team == shooter_team)
 				if not friendly and multiplayer.is_server():
-					var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team)
+					var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team, shooter_peer_id)
 					LobbyManager.apply_player_damage.rpc(target_peer, new_hp)
 					if new_hp <= 0.0:
 						LobbyManager.notify_player_died.rpc(target_peer)
-				_spawn_sparks(hit_pos, hit)
+			hit_something.emit("player")
+			_spawn_sparks(hit_pos, hit)
 			queue_free()
 			return
 		if CombatUtils.should_damage(hit, shooter_team):
-			hit.take_damage(damage, source, shooter_team)
+			var hit_type := _get_hit_type(hit)
+			hit_something.emit(hit_type)
+			hit.take_damage(damage, source, shooter_team, shooter_peer_id)
 		_spawn_sparks(hit_pos, hit)
 		queue_free()
 		return
@@ -110,3 +116,14 @@ func _spawn_sparks(pos: Vector3, hit: Object) -> void:
 	particles.emitting = true
 	particles.restart()
 	particles.call_deferred("free")
+
+func _get_hit_type(hit: Object) -> String:
+	if hit is StaticBody3D and hit.has_meta("ghost_peer_id"):
+		return "player"
+	if hit is StaticBody3D and (hit.has_meta("is_tower") or (hit.get_parent() != null and hit.get_parent().has_meta("is_tower"))):
+		return "tower"
+	if hit.has_method("take_damage"):
+		var hit_team: int = hit.get("team") if hit.get("team") != null else -999
+		if hit_team >= 0:
+			return "minion"
+	return "building"

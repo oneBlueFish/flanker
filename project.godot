@@ -28,6 +28,7 @@ NetworkManager="*res://scripts/NetworkManager.gd"
 LobbyManager="*res://scripts/LobbyManager.gd"
 LoadingState="*res://scripts/LoadingState.gd"
 GraphicsSettings="*res://scripts/GraphicsSettings.gd"
+LevelSystem="*res://scripts/LevelSystem.gd"
 
 [display]
 

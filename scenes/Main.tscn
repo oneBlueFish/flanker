@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3 uid="uid://main"]
+[gd_scene load_steps=30 format=3 uid="uid://main"]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/EventFeed.gd" id="scripts/EventFeed.gd"]
@@ -16,11 +16,16 @@
 [ext_resource type="Script" path="res://scripts/FencePlacer.gd" id="15"]
 [ext_resource type="Theme" path="res://assets/ui_theme.tres" id="16"]
 [ext_resource type="Shader" path="res://assets/vignette.gdshader" id="vignette_shader"]
+[ext_resource type="Shader" path="res://assets/damage_flash.gdshader" id="damage_flash_shader"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_vignette"]
 shader = ExtResource("vignette_shader")
 shader_parameter/intensity = 0.2
 shader_parameter/radius = 1.4
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_damage_flash"]
+shader = ExtResource("damage_flash_shader")
+shader_parameter/intensity = 0.0
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_health_fill"]
 bg_color = Color(0.25, 0.75, 0.25, 1)
@@ -58,6 +63,33 @@ border_width_top = 1
 border_width_bottom = 1
 border_color = Color(0.85, 0.32, 0.05, 1)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_fill"]
+bg_color = Color(1.0, 0.75, 0.1, 1.0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pending_btn_normal"]
+bg_color = Color(0.14, 0.08, 0.04, 1.0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.85, 0.32, 0.05, 1)
+content_margin_left = 6.0
+content_margin_right = 6.0
+content_margin_top = 2.0
+content_margin_bottom = 2.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pending_btn_hover"]
+bg_color = Color(0.28, 0.14, 0.04, 1.0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1.0, 0.55, 0.1, 1)
+content_margin_left = 6.0
+content_margin_right = 6.0
+content_margin_top = 2.0
+content_margin_bottom = 2.0
+
 [node name="Main" type="Node"]
 script = ExtResource("1")
 
@@ -84,6 +116,7 @@ script = ExtResource("15")
 transform = Transform3D(0.98, -0.08, 0.18, 0, 0.91, 0.41, -0.20, -0.40, 0.89, 0, 40, 0)
 light_color = Color(1.0, 0.45, 0.18, 1)
 light_energy = 0.55
+light_volumetric_fog_energy = 3.0
 shadow_enabled = true
 shadow_blur = 2.0
 directional_shadow_mode = 2
@@ -137,6 +170,12 @@ anchor_bottom = 1.0
 mouse_filter = 2
 material = SubResource("ShaderMaterial_vignette")
 
+[node name="DamageFlashRect" type="ColorRect" parent="HUD"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+material = SubResource("ShaderMaterial_damage_flash")
+
 [node name="HUDOverlay" type="Node" parent="HUD"]
 
 [node name="WaveInfoPanel" type="PanelContainer" parent="HUD"]
@@ -172,6 +211,53 @@ text = "— WAVE 1 —"
 horizontal_alignment = 1
 add_theme_font_size_override = 28
 add_theme_color_override/font_color = Color(1.0, 0.35, 0.1, 1)
+
+; ── XP / Level panel (top-center) ────────────────────────────────────────
+[node name="XPPanel" type="PanelContainer" parent="HUD"]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -180.0
+offset_top = 8.0
+offset_right = 180.0
+offset_bottom = 34.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="XPHBox" type="HBoxContainer" parent="HUD/XPPanel"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="LevelLabel" type="Label" parent="HUD/XPPanel/XPHBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(34, 0)
+text = "Lv.1"
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(1.0, 0.85, 0.2, 1.0)
+
+[node name="XPBar" type="ProgressBar" parent="HUD/XPPanel/XPHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+custom_minimum_size = Vector2(0, 14)
+min_value = 0.0
+max_value = 100.0
+value = 0.0
+show_percentage = false
+theme_override_styles/fill = SubResource("StyleBoxFlat_xp_fill")
+theme_override_styles/background = SubResource("StyleBoxFlat_bar_bg")
+
+[node name="PendingButton" type="Button" parent="HUD/XPPanel/XPHBox"]
+layout_mode = 2
+visible = false
+text = "↑ 1 pt"
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(1.0, 0.75, 0.1, 1.0)
+theme_override_styles/normal = SubResource("StyleBoxFlat_pending_btn_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_pending_btn_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_pending_btn_hover")
 
 [node name="GameOverLabel" type="Label" parent="HUD"]
 anchors_preset = 8
@@ -247,6 +333,67 @@ offset_top = -1.0
 offset_right = 14.0
 offset_bottom = 1.0
 color = Color(1.0, 0.35, 0.1, 0.85)
+mouse_filter = 1
+layout_mode = 2
+
+[node name="HitIndicatorRing" type="Control" parent="HUD/Crosshair"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+mouse_filter = 1
+layout_mode = 2
+rotation = 0.785398
+
+[node name="RingTop" type="ColorRect" parent="HUD/Crosshair/HitIndicatorRing"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -1.5
+offset_top = -42.0
+offset_right = 1.5
+offset_bottom = -12.0
+color = Color(1.0, 0.7, 0.0, 0)
+mouse_filter = 1
+layout_mode = 2
+
+[node name="RingBottom" type="ColorRect" parent="HUD/Crosshair/HitIndicatorRing"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -1.5
+offset_top = 12.0
+offset_right = 1.5
+offset_bottom = 42.0
+color = Color(1.0, 0.7, 0.0, 0)
+mouse_filter = 1
+layout_mode = 2
+
+[node name="RingLeft" type="ColorRect" parent="HUD/Crosshair/HitIndicatorRing"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -42.0
+offset_top = -1.5
+offset_right = -12.0
+offset_bottom = 1.5
+color = Color(1.0, 0.7, 0.0, 0)
+mouse_filter = 1
+layout_mode = 2
+
+[node name="RingRight" type="ColorRect" parent="HUD/Crosshair/HitIndicatorRing"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 12.0
+offset_top = -1.5
+offset_right = 42.0
+offset_bottom = 1.5
+color = Color(1.0, 0.7, 0.0, 0)
 mouse_filter = 1
 layout_mode = 2
 
@@ -330,6 +477,8 @@ value = 100.0
 show_percentage = false
 theme_override_styles/fill = SubResource("StyleBoxFlat_health_fill")
 theme_override_styles/background = SubResource("StyleBoxFlat_bar_bg")
+
+
 
 [node name="RespawnLabel" type="Label" parent="HUD"]
 anchors_preset = 8

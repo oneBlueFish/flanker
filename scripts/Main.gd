@@ -50,17 +50,28 @@ const MinionAI := preload("res://scripts/MinionAI.gd")
 const RoleSelectDialogScene := preload("res://scenes/RoleSelectDialog.tscn")
 const SupporterHUDScene := preload("res://scenes/SupporterHUD.tscn")
 const AISupporterControllerScript := preload("res://scripts/AISupporterController.gd")
+const LevelUpDialogScene := preload("res://scenes/LevelUpDialog.tscn")
 
 var _supporter_hud: Node = null
+var _level_up_dialog: Control = null
 
 @onready var rts_camera:         Camera3D        = $RTSCamera
 @onready var vignette_rect:      ColorRect       = $HUD/VignetteRect
+@onready var damage_flash_rect:  ColorRect       = $HUD/DamageFlashRect
 
 # Vignette intensity targets — tune these to adjust feel.
 # Shape (radius) is set in assets/vignette.gdshader shader_parameter/radius.
 const VIGNETTE_NORMAL := 0.2  # subtle always-on strength
 const VIGNETTE_ZOOM   := 0.55 # stronger when scoped in
 const VIGNETTE_LERP   := 6.0  # transition speed
+
+const DAMAGE_FLASH_INTENSITY := 0.45  # peak red alpha on hit
+const DAMAGE_FLASH_DECAY     := 2.5   # how fast it fades (units/sec, timer starts at 1.0)
+var _damage_flash_time := 0.0
+
+const HIT_RING_DURATION := 0.2
+var _hit_ring_time := 0.0
+var _hit_ring_base_color: Color = Color.WHITE
 
 var fps_player: CharacterBody3D = null
 
@@ -69,6 +80,10 @@ var fps_player: CharacterBody3D = null
 @onready var wave_announce_panel: PanelContainer = $HUD/WaveAnnouncePanel
 @onready var wave_announce_label: Label          = $HUD/WaveAnnouncePanel/WaveAnnounceLabel
 @onready var crosshair:          Control         = $HUD/Crosshair
+@onready var hit_ring_top:       ColorRect       = $HUD/Crosshair/HitIndicatorRing/RingTop
+@onready var hit_ring_bottom:    ColorRect       = $HUD/Crosshair/HitIndicatorRing/RingBottom
+@onready var hit_ring_left:      ColorRect       = $HUD/Crosshair/HitIndicatorRing/RingLeft
+@onready var hit_ring_right:     ColorRect       = $HUD/Crosshair/HitIndicatorRing/RingRight
 @onready var respawn_label:      Label           = $HUD/RespawnLabel
 @onready var ammo_label:         Label           = $HUD/AmmoPanel/AmmoLabel
 @onready var weapon_slot1_row:   Control         = $HUD/VitalsPanel/VitalsBox/WeaponSlots/Slot1Row
@@ -81,6 +96,9 @@ var fps_player: CharacterBody3D = null
 @onready var minimap:            Control         = $HUD/MinimapPanel/Minimap
 @onready var stamina_bar:        ProgressBar     = $HUD/VitalsPanel/VitalsBox/StaminaBar
 @onready var health_bar:         ProgressBar     = $HUD/VitalsPanel/VitalsBox/HealthBar
+@onready var xp_bar:             ProgressBar     = $HUD/XPPanel/XPHBox/XPBar
+@onready var level_label:        Label           = $HUD/XPPanel/XPHBox/LevelLabel
+@onready var pending_button:     Button          = $HUD/XPPanel/XPHBox/PendingButton
 @onready var audio_mode_switch:  AudioStreamPlayer = $AudioModeSwitch
 @onready var audio_wave:         AudioStreamPlayer = $AudioWave
 @onready var audio_respawn:      AudioStreamPlayer = $AudioRespawn
@@ -254,6 +272,87 @@ func _setup_hud_for_player() -> void:
 	fps_player.connect("died", _on_player_died)
 	# Force icon population now that refs are wired
 	fps_player._update_weapon_label()
+	# Wire leveling HUD
+	_setup_level_hud()
+
+func _setup_level_hud() -> void:
+	var my_peer: int = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	LevelSystem.xp_gained.connect(_on_xp_gained)
+	LevelSystem.level_up.connect(_on_level_up_signal)
+	pending_button.pressed.connect(_on_pending_button_pressed)
+	_refresh_xp_bar(my_peer)
+	_refresh_pending_button()
+
+func _refresh_xp_bar(peer_id: int) -> void:
+	if xp_bar == null or level_label == null:
+		return
+	var lvl: int    = LevelSystem.get_level(peer_id)
+	var xp: int     = LevelSystem.get_xp(peer_id)
+	var needed: int = LevelSystem.get_xp_needed(peer_id)
+	level_label.text = "Lv.%d" % lvl
+	xp_bar.max_value = needed
+	xp_bar.value     = xp
+
+func _refresh_pending_button() -> void:
+	if pending_button == null:
+		return
+	var my_peer: int = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	var pts: int = LevelSystem.get_unspent_points(my_peer)
+	pending_button.visible = pts > 0
+	pending_button.text = "↑ %d pt%s" % [pts, "s" if pts != 1 else ""]
+
+func _on_pending_button_pressed() -> void:
+	_toggle_attributes_dialog()
+
+func _toggle_attributes_dialog() -> void:
+	if _level_up_dialog != null and _level_up_dialog.visible:
+		_level_up_dialog.visible = false
+		if fps_player and player_role == Role.FIGHTER and game_state == GameState.PLAYING and not _respawning:
+			fps_player.set_active(true)
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+		return
+	var my_peer: int = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	var is_mp: bool  = multiplayer.has_multiplayer_peer()
+	if _level_up_dialog == null:
+		_level_up_dialog = LevelUpDialogScene.instantiate()
+		$HUD.add_child(_level_up_dialog)
+		_level_up_dialog.connect("point_spent", _on_level_dialog_point_spent)
+		_level_up_dialog.connect("closed", _on_level_dialog_closed)
+	_level_up_dialog.setup(my_peer, is_mp)
+	_level_up_dialog.visible = true
+	if fps_player and player_role == Role.FIGHTER:
+		fps_player.set_active(false)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+func _on_xp_gained(peer_id: int, _amount: int, new_xp: int, xp_needed: int) -> void:
+	var my_peer: int = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	if peer_id != my_peer:
+		return
+	if xp_bar == null:
+		return
+	xp_bar.max_value = xp_needed
+	xp_bar.value     = new_xp
+	level_label.text = "Lv.%d" % LevelSystem.get_level(peer_id)
+
+func _on_level_up_signal(peer_id: int, _new_level: int) -> void:
+	var my_peer: int = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	if peer_id != my_peer:
+		return
+	_refresh_xp_bar(peer_id)
+	_refresh_pending_button()
+
+func _on_level_dialog_point_spent(_attr: String) -> void:
+	_refresh_pending_button()
+	var my_peer: int = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	if LevelSystem.get_unspent_points(my_peer) <= 0:
+		if fps_player and player_role == Role.FIGHTER and game_state == GameState.PLAYING and not _respawning:
+			fps_player.set_active(true)
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+func _on_level_dialog_closed() -> void:
+	if fps_player and player_role == Role.FIGHTER and game_state == GameState.PLAYING and not _respawning:
+		fps_player.set_active(true)
+		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 # ── Event Feed ────────────────────────────────────────────────────────────────
 
@@ -407,6 +506,21 @@ func _process(delta: float) -> void:
 		if mat:
 			var current: float = mat.get_shader_parameter("intensity")
 			mat.set_shader_parameter("intensity", lerp(current, target_intensity, VIGNETTE_LERP * delta))
+	# Damage flash — decays red screen overlay after taking a hit.
+	if _damage_flash_time > 0.0:
+		_damage_flash_time = max(0.0, _damage_flash_time - DAMAGE_FLASH_DECAY * delta)
+		var flash_mat: ShaderMaterial = damage_flash_rect.material as ShaderMaterial
+		if flash_mat:
+			flash_mat.set_shader_parameter("intensity", _damage_flash_time * DAMAGE_FLASH_INTENSITY)
+	# Hit ring — fades out after showing on a successful hit.
+	if _hit_ring_time > 0.0:
+		_hit_ring_time = max(0.0, _hit_ring_time - delta)
+		var t: float = _hit_ring_time / HIT_RING_DURATION
+		var ring_alpha: float = t * t
+		hit_ring_top.modulate.a = ring_alpha
+		hit_ring_bottom.modulate.a = ring_alpha
+		hit_ring_left.modulate.a = ring_alpha
+		hit_ring_right.modulate.a = ring_alpha
 
 func _get_terrain_height(pos: Vector3) -> float:
 	var world_3d: World3D = get_tree().root.get_world_3d()
@@ -422,6 +536,26 @@ func _get_terrain_height(pos: Vector3) -> float:
 	if result.is_empty():
 		return 0.0
 	return result.position.y
+
+func _on_bullet_hit_something(hit_type: String) -> void:
+	var color: Color
+	if hit_type == "minion":
+		color = Color(1.0, 0.7, 0.0)
+	elif hit_type == "tower":
+		color = Color(0.4, 0.7, 1.0)
+	elif hit_type == "player":
+		color = Color(1.0, 0.2, 0.2)
+	else:
+		color = Color(0.9, 0.9, 0.9)
+	hit_ring_top.color = color
+	hit_ring_bottom.color = color
+	hit_ring_left.color = color
+	hit_ring_right.color = color
+	_hit_ring_time = HIT_RING_DURATION
+	hit_ring_top.modulate.a = 1.0
+	hit_ring_bottom.modulate.a = 1.0
+	hit_ring_left.modulate.a = 1.0
+	hit_ring_right.modulate.a = 1.0
 
 func _setup_bases() -> void:
 	var blue_base = $World/BlueBase/BlueBaseInst
@@ -443,12 +577,9 @@ func _input(event: InputEvent) -> void:
 					toggle_pause(false)
 			return
 		if event.keycode == KEY_TAB or event.physical_keycode == KEY_TAB:
-			if game_state == GameState.PLAYING and not game_over and not _respawning:
-				# Fighters are FPS-only, supporters are RTS-only — no switching
-				if player_role == Role.FIGHTER or player_role == Role.SUPPORTER:
-					return
-				_set_mode(!fps_mode)
-				audio_mode_switch.play()
+			if game_state == GameState.PLAYING and not game_over:
+				_toggle_attributes_dialog()
+				return
 
 func _on_start_game() -> void:
 	# Show loading screen immediately — TreePlacer/WallPlacer are still pending
@@ -631,6 +762,7 @@ func _HUD_set_visible(visible: bool) -> void:
 	vitals_panel.visible = visible
 	points_label.visible = visible
 	respawn_label.visible = visible and _respawning
+	damage_flash_rect.visible = visible
 
 func _set_mode(is_fps: bool) -> void:
 	fps_mode = is_fps
@@ -640,6 +772,7 @@ func _set_mode(is_fps: bool) -> void:
 	crosshair.visible   = is_fps
 	minimap.visible     = is_fps
 	vignette_rect.visible = is_fps
+	damage_flash_rect.visible = is_fps
 	ammo_label.visible  = is_fps
 	vitals_panel.visible = is_fps
 	if not is_fps and reload_prompt:
@@ -650,6 +783,12 @@ func _set_mode(is_fps: bool) -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	else:
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+func flash_damage() -> void:
+	_damage_flash_time = 1.0
+	var flash_mat: ShaderMaterial = damage_flash_rect.material as ShaderMaterial
+	if flash_mat:
+		flash_mat.set_shader_parameter("intensity", DAMAGE_FLASH_INTENSITY)
 
 func game_over_signal(winner: String) -> void:
 	if game_over:

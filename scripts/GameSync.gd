@@ -39,7 +39,7 @@ func get_player_team(peer_id: int) -> int:
 func set_player_team(peer_id: int, team: int) -> void:
 	player_teams[peer_id] = team
 
-func damage_player(peer_id: int, amount: float, source_team: int) -> float:
+func damage_player(peer_id: int, amount: float, source_team: int, killer_peer_id: int = -1) -> float:
 	if player_dead.get(peer_id, false):
 		return player_healths.get(peer_id, 0.0)
 	var before: float = get_player_health(peer_id)
@@ -53,6 +53,9 @@ func damage_player(peer_id: int, amount: float, source_team: int) -> float:
 		var deaths: int = LobbyManager.increment_death_count(peer_id)
 		var respawn_time: float = min(deaths * LobbyManager.RESPAWN_INCREMENT + LobbyManager.RESPAWN_BASE, LobbyManager.RESPAWN_CAP)
 		respawn_countdown[peer_id] = respawn_time
+		# Award XP to killer (server-authoritative)
+		if killer_peer_id > 0:
+			LevelSystem.award_xp(killer_peer_id, LevelSystem.XP_PLAYER)
 	
 	return hp
 
@@ -68,11 +71,12 @@ func respawn_player(peer_id: int) -> void:
 	var spawn_pos: Vector3 = player_spawn_positions.get(team, Vector3.ZERO)
 	spawn_pos.y = 1.0
 	
-	player_healths[peer_id] = PLAYER_MAX_HP
+	var max_hp: float = PLAYER_MAX_HP + LevelSystem.get_bonus_hp(peer_id)
+	player_healths[peer_id] = max_hp
 	player_dead[peer_id] = false
 	respawn_countdown.erase(peer_id)
 	player_respawned.emit(peer_id, spawn_pos)
-	player_health_changed.emit(peer_id, PLAYER_MAX_HP)
+	player_health_changed.emit(peer_id, max_hp)
 
 func get_spawn_position(team: int) -> Vector3:
 	return player_spawn_positions.get(team, Vector3.ZERO)

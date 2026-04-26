@@ -6,7 +6,7 @@ const DETECT_RANGE     := 12.0
 const SHOOT_RANGE      := 10.0
 const SEPARATION_DIST  := 2.2
 const SEPARATION_FORCE := 6.0
-const BULLET_SPEED     := 84.0
+const BULLET_SPEED     := 58.8
 
 const MINION_SHOOT_SOUND := "res://assets/kenney_sci-fi-sounds/Audio/laserSmall_002.ogg"
 const MINION_DEATH_SOUND := "res://assets/kenney_sci-fi-sounds/Audio/impactMetal_000.ogg"
@@ -398,13 +398,18 @@ func _fire_at(target: Node3D) -> void:
 	bullet.velocity      = dir * BULLET_SPEED
 	get_tree().root.get_child(0).add_child(bullet)
 	bullet.global_position = spawn_pos
+	var main: Node = get_tree().root.get_node("Main")
+	if main.has_method("_on_bullet_hit_something"):
+		bullet.hit_something.connect(main._on_bullet_hit_something)
 
 	if multiplayer.is_server():
 		LobbyManager.spawn_bullet_visuals.rpc(bullet.global_position, dir, attack_damage, team)
 
 	shoot_audio.play()
 
-func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
+var _killer_peer_id: int = -1  # set in take_damage, read in _die
+
+func take_damage(amount: float, _source: String, _killer_team: int = -1, killer_peer_id: int = -1) -> void:
 	if is_puppet:
 		return  # Clients don't process damage — server only
 	if _dead:
@@ -412,6 +417,7 @@ func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void
 	# Friendly fire guard — same team = no damage
 	if _killer_team >= 0 and _killer_team == team:
 		return
+	_killer_peer_id = killer_peer_id
 	health -= amount
 	if health <= 0.0:
 		_die()
@@ -440,6 +446,13 @@ func _die() -> void:
 	if multiplayer.is_server():
 		var path: NodePath = get_path()
 		LobbyManager.kill_minion_visuals.rpc(path)
+		# Award XP to the killing player
+		if _killer_peer_id > 0:
+			LevelSystem.award_xp(_killer_peer_id, LevelSystem.XP_MINION)
+	elif not multiplayer.has_multiplayer_peer():
+		# Singleplayer: use peer_id 1
+		var sp_killer: int = _killer_peer_id if _killer_peer_id > 0 else 1
+		LevelSystem.award_xp(sp_killer, LevelSystem.XP_MINION)
 
 func force_die() -> void:
 	_die()

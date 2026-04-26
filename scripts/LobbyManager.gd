@@ -145,6 +145,10 @@ func start_game(path: String, map_seed: int = 0, time_seed: int = -1) -> void:
 	supporter_claimed = { 0: false, 1: false }
 	player_death_counts.clear()
 	ai_supporter_teams.clear()
+	LevelSystem.clear_all()
+	# Re-register all connected peers for the new match
+	for pid in players.keys():
+		LevelSystem.register_peer(pid)
 	game_started = true
 	game_start_requested.emit()
 	load_game_scene.rpc(path)
@@ -214,6 +218,8 @@ func get_players_by_team(team: int) -> Array:
 
 func _on_peer_connected(id: int) -> void:
 	print("Lobby: peer connected ", id)
+	# Register in LevelSystem so XP tracking is ready when game starts
+	LevelSystem.register_peer(id)
 
 func _on_peer_disconnected(id: int) -> void:
 	print("Lobby: peer disconnected ", id)
@@ -221,6 +227,7 @@ func _on_peer_disconnected(id: int) -> void:
 	_dirty = true
 	player_left.emit(id)
 	lobby_updated.emit()
+	LevelSystem.clear_peer(id)
 
 func _on_connected_to_server() -> void:
 	print("Connected to lobby server")
@@ -239,16 +246,20 @@ func _init_bullet_sync() -> void:
 	_bullet_scene = preload("res://scenes/Bullet.tscn")
 
 @rpc("authority", "call_remote", "reliable")
-func spawn_bullet_visuals(pos: Vector3, dir: Vector3, damage: float, shooter_team: int) -> void:
+func spawn_bullet_visuals(pos: Vector3, dir: Vector3, damage: float, shooter_team: int, shooter_peer_id: int = -1) -> void:
 	if _bullet_scene == null:
 		_bullet_scene = preload("res://scenes/Bullet.tscn")
 	var bullet: Node3D = _bullet_scene.instantiate()
 	bullet.damage = damage
 	bullet.source = "network_sync"
 	bullet.shooter_team = shooter_team
+	bullet.set("shooter_peer_id", shooter_peer_id)
 	bullet.velocity = dir * 196.0
 	get_tree().root.get_child(0).add_child(bullet)
 	bullet.global_position = pos
+	var main: Node = get_tree().root.get_node("Main")
+	if main.has_method("_on_bullet_hit_something") and shooter_peer_id == multiplayer.get_unique_id():
+		bullet.hit_something.connect(main._on_bullet_hit_something)
 
 var _minion_scene: PackedScene
 
@@ -314,13 +325,13 @@ func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_t
 				if minion != null and minion.has_method("take_damage"):
 					var mpos: Vector3 = minion.global_position
 					if mpos.distance_to(origin) <= 550.0:
-						minion.take_damage(damage, "player", shooter_team)
+						minion.take_damage(damage, "player", shooter_team, shooter_peer)
 		elif hit_info.has("peer_id"):
 			var target_peer: int = hit_info["peer_id"] as int
 			if target_peer != shooter_peer and not GameSync.player_dead.get(target_peer, false):
 				var target_team: int = GameSync.get_player_team(target_peer)
 				if target_team == -1 or target_team != shooter_team:
-					var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team)
+					var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team, shooter_peer)
 					apply_player_damage.rpc(target_peer, new_hp)
 					if new_hp <= 0.0:
 						notify_player_died.rpc(target_peer)
@@ -332,7 +343,7 @@ func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_t
 
 	if hit_result.has("peer_id"):
 		var target_peer: int = hit_result.peer_id
-		var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team)
+		var new_hp: float = GameSync.damage_player(target_peer, damage, shooter_team, shooter_peer)
 		apply_player_damage.rpc(target_peer, new_hp)
 		if new_hp <= 0.0:
 			notify_player_died.rpc(target_peer)
@@ -341,7 +352,7 @@ func validate_shot(origin: Vector3, direction: Vector3, damage: float, shooter_t
 		if main != null:
 			var minion: Node = main.get_node(hit_result.minion_path)
 			if minion != null and minion.has_method("take_damage"):
-				minion.take_damage(damage, "player", shooter_team)
+				minion.take_damage(damage, "player", shooter_team, shooter_peer)
 
 	spawn_bullet_visuals.rpc(origin, direction, damage, shooter_team)
 

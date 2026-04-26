@@ -6,7 +6,7 @@
 script = ExtResource("1")
 weapon_name = "Rifle"
 damage = 45.0
-bullet_speed = 380.0
+bullet_speed = 266.0
 fire_rate = 0.12
 reload_time = 2.0
 magazine_size = 20

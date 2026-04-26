@@ -3,15 +3,15 @@
 [ext_resource type="Script" path="res://scripts/Bullet.gd" id="1"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_1"]
-radius = 0.04
-height = 0.22
+radius = 0.055
+height = 0.8
 
 [sub_resource type="StandardMaterial3D" id="Mat_1"]
 flags_unshaded = true
 emission_enabled = true
 albedo_color = Color(1, 0.95, 0.6, 1)
 emission = Color(1, 0.95, 0.6, 1)
-emission_energy_multiplier = 3.0
+emission_energy_multiplier = 8.0
 no_depth_test = true
 
 [node name="Bullet" type="Node3D"]

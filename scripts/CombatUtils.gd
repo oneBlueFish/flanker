@@ -31,6 +31,6 @@ static func make_team_tracer_material(shooter_team: int) -> StandardMaterial3D:
 	else:
 		mat.albedo_color = Color(1.0, 0.4, 0.4, 1.0)
 		mat.emission     = Color(1.0, 0.4, 0.4)
-	mat.emission_energy_multiplier = 3.0
+	mat.emission_energy_multiplier = 8.0
 	mat.no_depth_test = true
 	return mat

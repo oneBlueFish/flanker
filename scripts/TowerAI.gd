@@ -119,11 +119,14 @@ func _shoot(target: Node3D) -> void:
 	ball.position = spawn_pos
 	get_tree().root.get_child(0).add_child(ball)
 
-func take_damage(amount: float, _source: String, _killer_team: int = -1) -> void:
+var _killer_peer_id: int = -1
+
+func take_damage(amount: float, _source: String, _killer_team: int = -1, killer_peer_id: int = -1) -> void:
 	if not multiplayer.is_server():
 		return
 	if _dead:
 		return
+	_killer_peer_id = killer_peer_id
 	health -= amount
 	_hit_flash()
 	if health <= 0:
@@ -147,6 +150,11 @@ func _hit_flash() -> void:
 
 func _die() -> void:
 	_dead = true
+	# Award XP to the killing player (server-authoritative)
+	if _killer_peer_id > 0:
+		LevelSystem.award_xp(_killer_peer_id, LevelSystem.XP_TOWER)
+	elif not multiplayer.has_multiplayer_peer():
+		LevelSystem.award_xp(1, LevelSystem.XP_TOWER)
 	if multiplayer.has_multiplayer_peer():
 		LobbyManager.despawn_tower.rpc(name)
 	else:

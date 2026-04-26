@@ -6,7 +6,7 @@
 script = ExtResource("1")
 weapon_name = "Heavy Blaster"
 damage = 70.0
-bullet_speed = 200.0
+bullet_speed = 140.0
 fire_rate = 0.6
 reload_time = 3.0
 magazine_size = 6
